@@ -914,3 +914,12 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 
 /* « Toujours là » verrouillé : visible mais inactif. */
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ---------- Bouton Réglages, à côté du profil ---------- */
+.settings-btn {
+  margin-left: auto; display: grid; place-items: center; width: 40px; height: 40px; flex: none;
+  border: 0; border-radius: 50%; background: rgba(255,255,255,0.14); color: #fff;
+}
+.settings-btn:hover { background: rgba(255,255,255,0.24); }
+.settings-btn .ico { color: #fff; }
+.settings-btn + .me-chip { margin-left: 8px; }

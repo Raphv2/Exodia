@@ -18,6 +18,8 @@ import { mountRoute, toggleInRoute } from './route';
 import { mountTeam } from './team';
 import { openSheet } from './sheet';
 import { h, icon, toast, isDesktop, time } from './ui';
+import { quietPosition, walkMinutes } from './geo';
+import { chips } from './forms';
 import { TYPES, type Point } from '../../shared/model';
 
 const app = document.getElementById('app')!;
@@ -148,6 +150,7 @@ function startApp() {
     h('header', { class: 'topbar' },
       brand(),
       h('nav', { class: 'toptabs', 'aria-label': 'Sections' }, NAV.filter((n) => n.view !== 'map').map((n) => navBtn(n, 'toptab'))),
+      h('button', { class: 'settings-btn', type: 'button', onclick: openSettings, 'aria-label': 'Réglages', title: 'Réglages' }, icon('settings', 20)),
       h('button', { class: 'me-chip', type: 'button', onclick: () => store.setView('team'), title: 'Mon accès' },
         h('span', { class: 'avatar tiny' }, store.me.name.slice(0, 1).toUpperCase()),
         h('span', { class: 'me-name' }, store.me.name)),
@@ -231,22 +234,88 @@ function connectStream() {
     clearTimeout(t);
     t = window.setTimeout(() => store.refresh().catch(() => {}), 300);
     if (data.by === store.me.id) return;
-    if (data.action === 'create' && (data.type === 'warning' || data.type === 'danger' || data.type === 'police')) {
+    const isAlert = data.action === 'create' && (data.type === 'warning' || data.type === 'danger' || data.type === 'police');
+    const isFlash = data.action === 'create' && !!data.flash;
+    const isProblem = data.action === 'problem';
+    if (!isAlert && !isFlash && !isProblem) return;
+    void (async () => {
+      const near = await shouldNotify(data.id);
+      if (!near.ok) return;
+      const away = near.minutes != null ? ` · à ${Math.max(1, Math.round(near.minutes))} min à pied` : '';
       // Chaque notification porte l'icône de ce qu'elle signale (pas d'emoji).
-      if (data.type === 'police') toast('Police / CRS signalée sur la carte', 'police', 8000, 'police', show);
-      else if (data.type === 'danger') toast('Nouveau danger signalé sur la carte', 'err', 8000, 'siren', show);
-      else toast('Nouveau warning signalé sur la carte', 'warning', 8000, 'triangle-alert', show);
-      navigator.vibrate?.([200, 100, 200]);
-    } else if (data.action === 'create' && data.flash) {
-      const when = !data.startsAt || data.startsAt <= Date.now() + 60_000 ? 'maintenant' : `à ${time(data.startsAt)}`;
-      toast(`Flash : « ${data.title ?? 'événement'} » ${when}`, 'flash', 8000, 'zap', show);
-      navigator.vibrate?.([120, 60, 120, 60, 120]);
-    } else if (data.action === 'problem') {
-      toast(`Problème signalé : « ${data.title ?? 'un point'} »`, 'err', 8000, 'circle-alert', show);
-      navigator.vibrate?.([200, 100, 200]);
-    }
+      if (isAlert) {
+        if (data.type === 'police') toast(`Police / CRS signalée${away}`, 'police', 8000, 'police', show);
+        else if (data.type === 'danger') toast(`Danger signalé${away}`, 'err', 8000, 'siren', show);
+        else toast(`Warning signalé${away}`, 'warning', 8000, 'triangle-alert', show);
+        navigator.vibrate?.([200, 100, 200]);
+      } else if (isFlash) {
+        const when = !data.startsAt || data.startsAt <= Date.now() + 60_000 ? 'maintenant' : `à ${time(data.startsAt)}`;
+        toast(`Flash : « ${data.title ?? 'événement'} » ${when}${away}`, 'flash', 8000, 'zap', show);
+        navigator.vibrate?.([120, 60, 120, 60, 120]);
+      } else {
+        toast(`Problème signalé : « ${data.title ?? 'un point'} »${away}`, 'err', 8000, 'circle-alert', show);
+        navigator.vibrate?.([200, 100, 200]);
+      }
+    })();
   });
   es.addEventListener('revoked', () => location.reload());
+}
+
+/**
+ * Faut-il me notifier ? (Sur la carte, le point s'affiche et clignote quand même pour tout le monde.)
+ * - Blocage rattaché à un blocus : toujours si je suis concerné·e par ce blocus
+ *   (inscrit·e, organisateur·rice, auteur·rice du blocage).
+ * - Sinon : seulement si je suis à moins de N minutes à pied (réglage, 15 min par défaut).
+ * - Position inconnue : on prévient quand même (mieux vaut une notif de trop qu'une alerte ratée).
+ */
+async function shouldNotify(pointId?: string): Promise<{ ok: boolean; minutes?: number }> {
+  let p = pointId ? store.get(pointId) : undefined;
+  if (pointId && !p) { await store.refresh().catch(() => {}); p = store.get(pointId); }
+  if (!p) return { ok: true };
+  const me = store.me.id;
+  if (p.type === 'blocage' && p.parentId) {
+    const blocus = store.get(p.parentId);
+    if (blocus && (blocus.createdBy === me || p.createdBy === me || blocus.participants.some((x) => x.id === me))) return { ok: true };
+  }
+  const limit = notifRadius();
+  const pos = await quietPosition();
+  if (!pos) return { ok: true };
+  const minutes = walkMinutes(pos, p);
+  return { ok: limit === 0 || minutes <= limit, minutes };
+}
+
+// ---------- Réglages (propres à cet appareil) ----------
+
+const RADIUS_KEY = 'terrain:notif-minutes';
+const RADIUS_CHOICES = [5, 15, 30, 60, 0]; // 0 = partout
+
+/** Distance max (en minutes à pied) pour être notifié·e. 0 = partout. 15 par défaut. */
+function notifRadius(): number {
+  try {
+    const v = Number(localStorage.getItem(RADIUS_KEY));
+    return RADIUS_CHOICES.includes(v) && localStorage.getItem(RADIUS_KEY) !== null ? v : 15;
+  } catch { return 15; }
+}
+
+function openSettings() {
+  const hint = h('p', { class: 'field-hint' });
+  const explain = (v: number) => (hint.textContent = v === 0
+    ? 'Tu seras prévenu·e de tout, où que tu sois.'
+    : `Tu seras prévenu·e seulement si c'est à moins de ${v} min à pied de toi.`);
+  explain(notifRadius());
+  openSheet({
+    title: 'Réglages',
+    body: h('div', { class: 'form' },
+      h('div', { class: 'section-title' }, icon('bell', 18), 'Notifications'),
+      h('p', { class: 'muted' }, 'Alertes (warning, danger, police), flashs et problèmes : me prévenir quand c\'est à moins de…'),
+      chips(RADIUS_CHOICES.map((v) => ({ value: v, label: v === 0 ? 'Partout' : v === 60 ? '1 h à pied' : `${v} min à pied` })), notifRadius(), (v) => {
+        try { localStorage.setItem(RADIUS_KEY, String(v)); } catch { /* ignore */ }
+        explain(v);
+      }),
+      hint,
+      h('p', { class: 'field-hint' }, 'Les points restent visibles sur la carte pour tout le monde. Pour un blocus auquel tu participes, tu es toujours prévenu·e des problèmes sur ses blocages. Si ta position est inconnue, tu es prévenu·e quand même.'),
+    ),
+  });
 }
 
 function welcome() {

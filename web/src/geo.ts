@@ -5,7 +5,27 @@ export interface Pos {
 }
 
 let last: Pos | null = null;
+let lastAt = 0;
 export const lastPosition = () => last;
+
+/** Temps de marche estimé (minutes) : ligne droite × 1,3 pour les rues, à 4,5 km/h. */
+export const walkMinutes = (a: Pos, b: Pos) => (distance(a, b) * 1.3) / 4500 * 60;
+
+/**
+ * Position pour décider d'une notification, sans jamais déranger :
+ * la dernière connue si elle a moins de 5 min, sinon une nouvelle lecture
+ * seulement si la localisation est déjà autorisée (pas de demande d'autorisation). Sinon null.
+ */
+export async function quietPosition(): Promise<Pos | null> {
+  if (last && Date.now() - lastAt < 5 * 60_000) return last;
+  try {
+    const perm = await navigator.permissions?.query({ name: 'geolocation' as PermissionName });
+    if (perm?.state !== 'granted') return last;
+    return await getPosition(6000);
+  } catch {
+    return last;
+  }
+}
 
 export function getPosition(timeout = 10000): Promise<Pos> {
   return new Promise((resolve, reject) => {
@@ -14,6 +34,7 @@ export function getPosition(timeout = 10000): Promise<Pos> {
     navigator.geolocation.getCurrentPosition(
       (p) => {
         last = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy };
+        lastAt = Date.now();
         resolve(last);
       },
       (err) => {
