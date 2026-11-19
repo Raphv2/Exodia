@@ -271,13 +271,14 @@ function connectStream() {
 async function shouldNotify(pointId?: string): Promise<{ ok: boolean; minutes?: number }> {
   let p = pointId ? store.get(pointId) : undefined;
   if (pointId && !p) { await store.refresh().catch(() => {}); p = store.get(pointId); }
+  const limit = notifRadius();
+  if (limit < 0) return { ok: false }; // « Aucune » : plus aucune notification
   if (!p) return { ok: true };
   const me = store.me.id;
   if (p.type === 'blocage' && p.parentId) {
     const blocus = store.get(p.parentId);
     if (blocus && (blocus.createdBy === me || p.createdBy === me || blocus.participants.some((x) => x.id === me))) return { ok: true };
   }
-  const limit = notifRadius();
   const pos = await quietPosition();
   if (!pos) return { ok: true };
   const minutes = walkMinutes(pos, p);
@@ -287,9 +288,9 @@ async function shouldNotify(pointId?: string): Promise<{ ok: boolean; minutes?: 
 // ---------- Réglages (propres à cet appareil) ----------
 
 const RADIUS_KEY = 'terrain:notif-minutes';
-const RADIUS_CHOICES = [5, 15, 30, 60, 0]; // 0 = partout
+const RADIUS_CHOICES = [5, 15, 30, 60, 0, -1]; // 0 = partout, -1 = aucune
 
-/** Distance max (en minutes à pied) pour être notifié·e. 0 = partout. 15 par défaut. */
+/** Distance max (en minutes à pied) pour être notifié·e. 0 = partout, -1 = aucune. 15 par défaut. */
 function notifRadius(): number {
   try {
     const v = Number(localStorage.getItem(RADIUS_KEY));
@@ -299,16 +300,18 @@ function notifRadius(): number {
 
 function openSettings() {
   const hint = h('p', { class: 'field-hint' });
-  const explain = (v: number) => (hint.textContent = v === 0
-    ? 'Tu seras prévenu·e de tout, où que tu sois.'
-    : `Tu seras prévenu·e seulement si c'est à moins de ${v} min à pied de toi.`);
+  const explain = (v: number) => (hint.textContent = v < 0
+    ? 'Tu ne recevras plus aucune notification. Tout reste visible sur la carte.'
+    : v === 0
+      ? 'Tu seras prévenu·e de tout, où que tu sois.'
+      : `Tu seras prévenu·e seulement si c'est à moins de ${v} min à pied de toi.`);
   explain(notifRadius());
   openSheet({
     title: 'Réglages',
     body: h('div', { class: 'form' },
       h('div', { class: 'section-title' }, icon('bell', 18), 'Notifications'),
       h('p', { class: 'muted' }, 'Alertes (warning, danger, police), flashs et problèmes : me prévenir quand c\'est à moins de…'),
-      chips(RADIUS_CHOICES.map((v) => ({ value: v, label: v === 0 ? 'Partout' : v === 60 ? '1 h à pied' : `${v} min à pied` })), notifRadius(), (v) => {
+      chips(RADIUS_CHOICES.map((v) => ({ value: v, label: v < 0 ? 'Aucune' : v === 0 ? 'Partout' : v === 60 ? '1 h à pied' : `${v} min à pied` })), notifRadius(), (v) => {
         try { localStorage.setItem(RADIUS_KEY, String(v)); } catch { /* ignore */ }
         explain(v);
       }),
