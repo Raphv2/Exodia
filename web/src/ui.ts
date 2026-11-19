@@ -85,12 +85,20 @@ export function clear(el: Element, ...children: Child[]) {
 // ---------- Toasts ----------
 
 let toastWrap: HTMLElement | null = null;
-export function toast(msg: string, kind: 'ok' | 'err' | 'info' = 'info', ms = 3200) {
+export type ToastKind = 'ok' | 'err' | 'info' | 'warning' | 'police' | 'flash';
+
+/** Notification en bas de l'écran. `ico` : icône de l'app à afficher (sinon celle du genre de message). */
+export function toast(msg: string, kind: ToastKind = 'info', ms = 3200, ico?: string, onClick?: () => void) {
   if (!toastWrap) {
     toastWrap = h('div', { class: 'toasts', role: 'status', 'aria-live': 'polite' });
     document.body.append(toastWrap);
   }
-  const t = h('div', { class: `toast toast-${kind}` }, kind === 'ok' ? icon('circle-check', 18) : kind === 'err' ? icon('triangle-alert', 18) : null, h('span', null, msg));
+  const name = ico ?? (kind === 'ok' ? 'circle-check' : kind === 'err' ? 'triangle-alert' : null);
+  const t = h(onClick ? 'button' : 'div', { class: `toast toast-${kind}${onClick ? ' toast-link' : ''}`, type: onClick ? 'button' : undefined },
+    name ? h('span', { class: 'toast-ico' }, icon(name, 18)) : null, h('span', null, msg),
+    onClick ? h('span', { class: 'toast-go' }, icon('chevron-right', 18)) : null);
+  // Notification cliquable : montre le point concerné, puis disparaît.
+  if (onClick) t.addEventListener('click', () => { t.remove(); onClick(); });
   toastWrap.append(t);
   requestAnimationFrame(() => t.classList.add('in'));
   setTimeout(() => {

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db, UPLOAD_DIR } from './db';
 import { newId, type DeviceRow } from './auth';
 import { broadcast } from './events';
-import { TYPES, TYPE_KEYS, STATUSES, BLOCUS_COLORS, canReportProblem, type Participant, type Person, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
+import { TYPES, TYPE_KEYS, STATUSES, BLOCUS_COLORS, CONFIRM_LOCK_MIN, canReportProblem, type Participant, type Person, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
 import { occurrences } from '../shared/time';
 
 export const points = Router();
@@ -16,7 +16,7 @@ interface PointRow {
   id: string; mode: Point['mode']; type: Point['type']; title: string; description: string | null;
   lat: number; lng: number; color: string | null; photo: string | null;
   starts_at: number | null; ends_at: number | null; recurrence: Point['recurrence']; recurrence_until: number | null;
-  expires_at: number | null; status: Point['status']; status_at: number | null; parent_id: string | null; material: string | null; flash: number; created_by: string; created_at: number; updated_at: number;
+  expires_at: number | null; status: Point['status']; status_at: number | null; parent_id: string | null; material: string | null; flash: number; confirmed_at: number | null; created_by: string; created_at: number; updated_at: number;
   creator_name?: string | null;
 }
 
@@ -46,7 +46,7 @@ const toDto = (r: PointRow, problems: Problem[] = [], pledges: Pledges = NO_PLED
   startsAt: r.starts_at, endsAt: r.ends_at, recurrence: r.recurrence, recurrenceUntil: r.recurrence_until,
   expiresAt: r.expires_at, status: r.status, createdBy: r.created_by, creatorName: r.creator_name ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at,
-  statusAt: r.status_at ?? null, parentId: r.parent_id ?? null, material: parseMaterial(r.material), flash: !!r.flash,
+  statusAt: r.status_at ?? null, parentId: r.parent_id ?? null, material: parseMaterial(r.material), flash: !!r.flash, confirmedAt: r.confirmed_at ?? null,
   problems,
   participants: pledges.participants,
   providers: pledges.providers,
@@ -64,12 +64,22 @@ const getPoint = (id: string) => db.prepare(`${SELECT} WHERE p.id = ?`).get(id) 
 
 interface ProblemRow {
   id: string; point_id: string; message: string; created_by: string; created_at: number; expires_at: number;
-  creator_name: string | null;
+  confirmed_at: number | null; creator_name: string | null;
 }
 const problemDto = (r: ProblemRow): Problem => ({
   id: r.id, pointId: r.point_id, message: r.message, createdBy: r.created_by, creatorName: r.creator_name,
-  createdAt: r.created_at, expiresAt: r.expires_at,
+  createdAt: r.created_at, expiresAt: r.expires_at, confirmedAt: r.confirmed_at ?? null,
 });
+
+/** Message d'attente si « Toujours là » a déjà été utilisé il y a moins de 15 min (sinon null). */
+function confirmLocked(createdAt: number, confirmedAt: number | null): string | null {
+  const wait = Math.max(createdAt, confirmedAt ?? 0) + CONFIRM_LOCK_MIN * 60_000 - Date.now();
+  if (wait <= 0) return null;
+  const m = Math.ceil(wait / 60_000);
+  return confirmedAt
+    ? `Déjà confirmé il y a moins de ${CONFIRM_LOCK_MIN} min : tu pourras le refaire dans ${m} min.`
+    : `Signalé il y a moins de ${CONFIRM_LOCK_MIN} min : tu pourras confirmer dans ${m} min.`;
+}
 const PROBLEM_SELECT = `SELECT pr.*, d.name AS creator_name FROM problems pr LEFT JOIN devices d ON d.id = pr.created_by
   WHERE pr.resolved_at IS NULL AND pr.expires_at > ?`;
 
@@ -123,7 +133,7 @@ function blocusFor(parentId: string | null | undefined): { id: string | null } |
   return { id: parent.id };
 }
 
-type Normalized = Omit<PointRow, 'id' | 'created_by' | 'created_at' | 'updated_at' | 'creator_name' | 'status_at'>;
+type Normalized = Omit<PointRow, 'id' | 'created_by' | 'created_at' | 'updated_at' | 'creator_name' | 'status_at' | 'confirmed_at'>;
 
 /** Valide et normalise les règles métier (horaires, expiration, alertes). */
 function normalize(input: PointInput, existing?: PointRow): Normalized | string {
@@ -265,8 +275,11 @@ points.post('/points/:id/extend', (req, res) => {
   if (!minutes.success) return res.status(400).json({ error: 'Durée invalide' });
   const row = getPoint(req.params.id);
   if (!row || !TYPES[row.type].alert) return res.status(404).json({ error: 'Alerte introuvable' });
-  const exp = Math.max(row.expires_at ?? 0, Date.now()) + minutes.data * 60_000;
-  db.prepare('UPDATE points SET expires_at = ?, ends_at = ?, updated_at = ? WHERE id = ?').run(exp, exp, Date.now(), row.id);
+  const locked = confirmLocked(row.created_at, row.confirmed_at);
+  if (locked) return res.status(429).json({ error: locked });
+  const now = Date.now();
+  const exp = Math.max(row.expires_at ?? 0, now) + minutes.data * 60_000;
+  db.prepare('UPDATE points SET expires_at = ?, ends_at = ?, confirmed_at = ?, updated_at = ? WHERE id = ?').run(exp, exp, now, now, row.id);
   broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
   res.json({ point: pointDto(row.id)! });
 });
@@ -356,10 +369,14 @@ points.post('/problems/:id/resolve', (req, res) => {
 points.post('/problems/:id/extend', (req, res) => {
   const minutes = z.number().int().min(5).max(240).safeParse(req.body?.minutes);
   if (!minutes.success) return res.status(400).json({ error: 'Durée invalide' });
-  const pr = db.prepare('SELECT point_id, expires_at FROM problems WHERE id = ? AND resolved_at IS NULL').get(req.params.id) as { point_id: string; expires_at: number } | undefined;
+  const pr = db.prepare('SELECT point_id, expires_at, created_at, confirmed_at FROM problems WHERE id = ? AND resolved_at IS NULL').get(req.params.id) as
+    { point_id: string; expires_at: number; created_at: number; confirmed_at: number | null } | undefined;
   if (!pr) return res.status(404).json({ error: 'Problème introuvable ou déjà réglé' });
-  const exp = Math.max(pr.expires_at, Date.now()) + minutes.data * 60_000;
-  db.prepare('UPDATE problems SET expires_at = ? WHERE id = ?').run(exp, req.params.id);
+  const locked = confirmLocked(pr.created_at, pr.confirmed_at);
+  if (locked) return res.status(429).json({ error: locked });
+  const now = Date.now();
+  const exp = Math.max(pr.expires_at, now) + minutes.data * 60_000;
+  db.prepare('UPDATE problems SET expires_at = ?, confirmed_at = ? WHERE id = ?').run(exp, now, req.params.id);
   broadcast('points', { id: pr.point_id, by: req.device!.id, action: 'update' });
   res.json({ point: pointDto(pr.point_id)! });
 });

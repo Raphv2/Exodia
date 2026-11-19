@@ -123,9 +123,10 @@ function startApp() {
     team: h('section', { class: 'panel-view', dataset: { view: 'team' } }),
   };
 
-  const filterChip = (g: Group, label: string, color: string) => h('button', {
+  // Filtres de la carte : icône + texte (sur téléphone, l'icône seule).
+  const filterChip = (g: Group, label: string, short: string, color: string, ico: string) => h('button', {
     class: `fchip fchip-${g}${store.filters[g] ? ' on' : ''}`, type: 'button', style: { '--c': color } as Record<string, string>,
-    'aria-pressed': String(store.filters[g]),
+    'aria-pressed': String(store.filters[g]), 'aria-label': label, title: label,
     onclick: (e: Event) => {
       store.filters[g] = !store.filters[g];
       const b = e.currentTarget as HTMLElement;
@@ -133,14 +134,14 @@ function startApp() {
       b.setAttribute('aria-pressed', String(store.filters[g]));
       store.emit('filters');
     },
-  }, h('i'), label);
+  }, icon(ico, 16, 2.4), h('span', { class: 'fchip-label' }, label), h('span', { class: 'fchip-short' }, short));
 
-  const todayChip = h('button', { class: 'fchip fchip-today', type: 'button', 'aria-pressed': 'false', onclick: () => {
+  const todayChip = h('button', { class: 'fchip fchip-today', type: 'button', 'aria-pressed': 'false', 'aria-label': 'Aujourd\'hui seulement', title: 'Aujourd\'hui seulement', onclick: () => {
     store.todayOnly = !store.todayOnly;
     todayChip.classList.toggle('on', store.todayOnly);
     todayChip.setAttribute('aria-pressed', String(store.todayOnly));
     store.emit('filters');
-  } }, icon('calendar', 14), 'Aujourd\'hui');
+  } }, icon('sun', 16, 2.4), h('span', { class: 'fchip-today-label' }, 'Aujourd\'hui'));
 
   const mapEl = h('div', { id: 'map', 'aria-label': 'Carte' });
   const shell = h('div', { class: 'app' },
@@ -156,9 +157,10 @@ function startApp() {
       h('div', { class: 'map-wrap' },
         mapEl,
         h('div', { class: 'map-filters', role: 'toolbar', 'aria-label': 'Filtres' },
-          filterChip('fixe', 'Points fixes', '#7B13D6'),
-          filterChip('event', 'Événements', '#FF7A00'),
-          filterChip('alert', 'Alertes', '#F53B3B'),
+          filterChip('fixe', 'Points fixes', 'Fixes', '#7B13D6', 'map-pin'),
+          filterChip('event', 'Événements', 'Events', '#FF7A00', 'calendar'),
+          filterChip('flash', 'Flash', 'Flash', '#C99700', 'zap'),
+          filterChip('alert', 'Alertes', 'Alertes', '#F53B3B', 'triangle-alert'),
           todayChip,
         ),
         h('button', { class: 'map-btn locate', type: 'button', 'aria-label': 'Me localiser', title: 'Me localiser', onclick: () => locateMe() }, icon('locate-fixed', 22)),
@@ -216,19 +218,31 @@ function connectStream() {
   const es = new EventSource('/api/stream');
   let t: number | undefined;
   es.addEventListener('points', (ev) => {
-    const data = JSON.parse((ev as MessageEvent).data || '{}') as { by?: string; action?: string; type?: string; title?: string; flash?: boolean; startsAt?: number };
+    const data = JSON.parse((ev as MessageEvent).data || '{}') as { id?: string; by?: string; action?: string; type?: string; title?: string; flash?: boolean; startsAt?: number };
+    // Toucher la notification : on montre le point sur la carte et on ouvre sa fiche.
+    const show = data.id ? async () => {
+      let p = store.get(data.id!);
+      if (!p) { await store.refresh().catch(() => {}); p = store.get(data.id!); }
+      if (!p) return toast('Ce point n\'existe plus.', 'info');
+      store.setView('map');
+      flyTo(p, 17);
+      openDetail(p);
+    } : undefined;
     clearTimeout(t);
     t = window.setTimeout(() => store.refresh().catch(() => {}), 300);
     if (data.by === store.me.id) return;
     if (data.action === 'create' && (data.type === 'warning' || data.type === 'danger' || data.type === 'police')) {
-      toast(data.type === 'police' ? 'POLICE / CRS signalée sur la carte' : data.type === 'danger' ? 'Nouveau DANGER signalé sur la carte' : 'Nouveau warning signalé sur la carte', 'err', 6000);
+      // Chaque notification porte l'icône de ce qu'elle signale (pas d'emoji).
+      if (data.type === 'police') toast('Police / CRS signalée sur la carte', 'police', 8000, 'police', show);
+      else if (data.type === 'danger') toast('Nouveau danger signalé sur la carte', 'err', 8000, 'siren', show);
+      else toast('Nouveau warning signalé sur la carte', 'warning', 8000, 'triangle-alert', show);
       navigator.vibrate?.([200, 100, 200]);
     } else if (data.action === 'create' && data.flash) {
       const when = !data.startsAt || data.startsAt <= Date.now() + 60_000 ? 'maintenant' : `à ${time(data.startsAt)}`;
-      toast(`⚡ Flash : « ${data.title ?? 'événement'} » ${when}`, 'info', 8000);
+      toast(`Flash : « ${data.title ?? 'événement'} » ${when}`, 'flash', 8000, 'zap', show);
       navigator.vibrate?.([120, 60, 120, 60, 120]);
     } else if (data.action === 'problem') {
-      toast(`Problème signalé : « ${data.title ?? 'un point'} »`, 'err', 6000);
+      toast(`Problème signalé : « ${data.title ?? 'un point'} »`, 'err', 8000, 'circle-alert', show);
       navigator.vibrate?.([200, 100, 200]);
     }
   });

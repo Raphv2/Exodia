@@ -3,7 +3,7 @@ import { TYPES, colorOf, type Device, type Point } from '../../shared/model';
 import { inkFor } from './ui';
 
 export type View = 'map' | 'agenda' | 'route' | 'team';
-export type Group = 'fixe' | 'event' | 'alert';
+export type Group = 'fixe' | 'event' | 'flash' | 'alert';
 
 type Listener = () => void;
 
@@ -11,7 +11,7 @@ class Store {
   me!: Device;
   points: Point[] = [];
   view: View = 'map';
-  filters: Record<Group, boolean> = { fixe: true, event: true, alert: true };
+  filters: Record<Group, boolean> = { fixe: true, event: true, flash: true, alert: true };
   todayOnly = false;
   /** Points sélectionnés pour le trajet de collage. */
   routeSelection = new Set<string>();

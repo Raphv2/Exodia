@@ -4,10 +4,11 @@ import { openSheet, confirmSheet } from './sheet';
 import { editPoint, durLabel, chips, newPointFlow } from './forms';
 import { h, icon, clear, toast, rangeLabel, relative, dateLong, time, toTimeInput, toDateInput, fromInputs } from './ui';
 import {
-  TYPES, iconOf, canReportProblem, STATUS_LABEL, STATUS_HINT, STATUSES, RECURRENCE_LABEL, PROBLEM_PRESETS, PROBLEM_DURATIONS,
+  TYPES, iconOf, canReportProblem, nextConfirmAt, STATUS_LABEL, STATUS_HINT, STATUSES, RECURRENCE_LABEL, PROBLEM_PRESETS, PROBLEM_DURATIONS,
   type Point, type Problem,
 } from '../../shared/model';
 import { nextOccurrence, isActive, liveProblems } from '../../shared/time';
+import { getPosition, lastPosition, distance, fmtDistance, type Pos } from './geo';
 
 async function act(fn: () => Promise<{ point: Point }>, msg: string) {
   try {
@@ -20,6 +21,19 @@ async function act(fn: () => Promise<{ point: Point }>, msg: string) {
   }
 }
 
+/**
+ * Bouton « Toujours là » : grisé tant que les 15 min ne sont pas écoulées depuis le signalement
+ * ou la dernière confirmation (le serveur applique la même règle).
+ */
+function confirmButton(nextAt: number, size: string, ico: number, label: string, onConfirm: () => void) {
+  const wait = nextAt - Date.now();
+  if (wait > 0) {
+    return h('button', { class: `btn ${size} btn-light`, type: 'button', disabled: true, title: 'Une confirmation par tranche de 15 min' },
+      icon('timer', ico), `${label} · dans ${Math.ceil(wait / 60_000)} min`);
+  }
+  return h('button', { class: `btn ${size} btn-light`, type: 'button', onclick: onConfirm }, icon('timer', ico), label);
+}
+
 function problemCard(p: Point, pr: Problem) {
   return h('div', { class: 'problem-card', role: 'alert' },
     h('div', { class: 'problem-head' }, icon('circle-alert', 20), h('strong', null, pr.message)),
@@ -27,7 +41,7 @@ function problemCard(p: Point, pr: Problem) {
       `Signalé ${relative(pr.createdAt)}${pr.creatorName ? ` par ${pr.creatorName}` : ''} · expire ${relative(pr.expiresAt)}`),
     h('div', { class: 'problem-actions' },
       h('button', { class: 'btn btn-small btn-done', type: 'button', onclick: () => act(() => api.resolveProblem(pr.id), 'Problème marqué comme réglé') }, icon('check', 15), 'C\'est réglé'),
-      h('button', { class: 'btn btn-small btn-light', type: 'button', onclick: () => act(() => api.extendProblem(pr.id, 30), 'Problème prolongé de 30 min') }, icon('timer', 15), 'Toujours là'),
+      confirmButton(nextConfirmAt(pr), 'btn-small', 15, 'Toujours là', () => act(() => api.extendProblem(pr.id, 30), 'Problème prolongé de 30 min')),
     ),
   );
 }
@@ -192,6 +206,45 @@ function pledgeSection(p: Point) {
   );
 }
 
+/** Vitesses moyennes en ville (km/h) et détour des rues par rapport à la ligne droite. */
+const WALK_KMH = 4.5;
+const BIKE_KMH = 13;
+const DETOUR = 1.3;
+const mins = (m: number, kmh: number) => {
+  const t = Math.max(1, Math.round((m / 1000 / kmh) * 60));
+  return t >= 60 ? `${Math.floor(t / 60)} h ${String(t % 60).padStart(2, '0')}` : `${t} min`;
+};
+
+/** « À combien je suis ? » : distance et temps estimés depuis ma position, à pied et à vélo. */
+function howFar(p: Point) {
+  const wrap = h('div', { class: 'how-far' });
+  const show = (pos: Pos) => {
+    const m = distance(pos, p) * DETOUR;
+    clear(wrap,
+      h('div', { class: 'how-far-res' },
+        h('span', { class: 'how-far-item' }, icon('footprints', 16), h('strong', null, mins(m, WALK_KMH)), 'à pied'),
+        h('span', { class: 'how-far-item' }, icon('bike', 16), h('strong', null, mins(m, BIKE_KMH)), 'à vélo'),
+        h('span', { class: 'how-far-item muted' }, `≈ ${fmtDistance(m)}`),
+      ),
+      h('button', { class: 'link-btn', type: 'button', onclick: ask }, 'Actualiser'),
+    );
+  };
+  const ask = async () => {
+    clear(wrap, h('span', { class: 'how-far-wait' }, h('span', { class: 'spinner' }), 'Localisation…'));
+    try {
+      show(await getPosition(12000));
+    } catch (e) {
+      toast((e as Error).message, 'err', 4500);
+      clear(wrap, button);
+    }
+  };
+  const button = h('button', { class: 'btn btn-light btn-block', type: 'button', onclick: ask }, icon('locate-fixed', 18), 'À combien je suis ?');
+  // Position déjà connue (récente) : on affiche directement l'estimation.
+  const last = lastPosition();
+  if (last) show(last); else wrap.append(button);
+  return wrap;
+}
+
 export function directionsUrl(p: { lat: number; lng: number }) {
   return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
 }
@@ -260,14 +313,8 @@ export function openDetail(p: Point) {
       toast(inRoute ? 'Retiré du trajet' : 'Ajouté au trajet de collage', 'ok');
       openDetail(p);
     } }, icon('route', 18), inRoute ? 'Retirer du trajet' : 'Ajouter au trajet') : null,
-    meta.alert ? h('button', { class: 'btn btn-outline', type: 'button', onclick: async () => {
-      try {
-        const { point } = await api.extend(p.id, 30);
-        store.upsert(point);
-        toast('Alerte prolongée de 30 min', 'ok');
-        openDetail(point);
-      } catch (e) { toast((e as ApiError).message, 'err'); }
-    } }, icon('timer', 18), `Toujours là (+${durLabel(30)})`) : null,
+    meta.alert ? confirmButton(nextConfirmAt(p), '', 18, `Toujours là (+${durLabel(30)})`,
+      () => act(() => api.extend(p.id, 30), 'Alerte prolongée de 30 min')) : null,
     canEdit && p.mode === 'event' && !meta.alert && isActive(p) && (nextOccurrence(p)?.start ?? Infinity) <= Date.now() ? h('button', { class: 'btn btn-light', type: 'button', onclick: async () => {
       const held = p.type === 'blocus' ? store.points.filter((x) => x.parentId === p.id && x.status === 'tenu').length : 0;
       const more = held ? ` ${held > 1 ? `Les ${held} blocages encore tenus passeront` : 'Le blocage encore tenu passera'} à « sans personne ».` : '';
@@ -295,6 +342,7 @@ export function openDetail(p: Point) {
     ),
     h('h3', { class: 'detail-title' }, p.title),
     sched ? h('p', { class: `detail-when${meta.alert ? ' alert' : ''}` }, icon(meta.alert ? 'timer' : 'clock', 17), sched) : null,
+    howFar(p),
     p.recurrence !== 'none' && p.recurrenceUntil ? h('p', { class: 'detail-meta' }, `Jusqu'au ${dateLong(p.recurrenceUntil)}`) : null,
     parentLine,
     liveProblems(p).map((pr) => problemCard(p, pr)),

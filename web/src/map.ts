@@ -12,7 +12,8 @@ let meMarker: L.CircleMarker | null = null;
 let meHalo: L.Circle | null = null;
 let onPick: (p: Point) => void = () => {};
 
-export const groupOf = (p: Point): Group => (TYPES[p.type].alert ? 'alert' : p.mode === 'fixe' ? 'fixe' : 'event');
+export const groupOf = (p: Point): Group =>
+  TYPES[p.type].alert ? 'alert' : p.mode === 'fixe' ? 'fixe' : p.flash ? 'flash' : 'event';
 
 export function visiblePoints(now = Date.now()): Point[] {
   const dayStart = startOfDay(now);
@@ -23,7 +24,7 @@ export function visiblePoints(now = Date.now()): Point[] {
     if (liveProblems(p, now).length) return true;
     const g = groupOf(p);
     if (!store.filters[g]) return false;
-    if (store.todayOnly && g === 'event' && occurrences(p, dayStart, dayEnd).length === 0) return false;
+    if (store.todayOnly && (g === 'event' || g === 'flash') && occurrences(p, dayStart, dayEnd).length === 0) return false;
     return true;
   });
 }
@@ -108,7 +109,7 @@ export function renderMarkers() {
       else if (store.routeSelection.has(p.id)) {
         cls += ' pin-selected';
         const i = order.indexOf(p.id);
-        badge = i >= 0 ? String(i + 1) : '✓';
+        badge = i >= 0 ? String(i + 1) : iconHtml('check', 13, 3.2);
       }
     }
     const m = L.marker([p.lat, p.lng], {
@@ -119,8 +120,15 @@ export function renderMarkers() {
       title: p.title,
     });
     const mine = myPledge(p);
-    const label = problems.length ? `⚠ ${problems[0].message} · ${p.title}` : p.title;
-    m.bindTooltip(h('span', null, mine === 'going' ? `✓ Tu y vas · ${label}` : mine === 'providing' ? `Tu fournis du matos · ${label}` : label), { direction: 'top', className: 'pin-tip' });
+    // Infobulle : de vraies icônes, pas de symboles texte.
+    m.bindTooltip(h('span', { class: 'tip-line' },
+      problems.length ? icon('circle-alert', 14) : null,
+      mine === 'going' ? icon('check', 14) : mine === 'providing' ? icon('package', 14) : null,
+      h('span', null, [
+        mine === 'going' ? 'Tu y vas' : mine === 'providing' ? 'Tu fournis du matos' : null,
+        problems.length ? problems[0].message : null,
+        p.title,
+      ].filter(Boolean).join(' · '))), { direction: 'top', className: 'pin-tip' });
     m.on('click', () => onPick(p));
     markers.addLayer(m);
   }

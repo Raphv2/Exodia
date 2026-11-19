@@ -866,3 +866,51 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* Même distinction dans les filtres de la carte. */
 .fchip-fixe i { border-radius: 50% 50% 50% 0; transform: rotate(-45deg); }
 .fchip-event i { border-radius: 3px; }
+
+/* ---------- Filtres de la carte : icônes (et texte sur grand écran) ---------- */
+.fchip-short { display: none; }
+.fchip .ico { color: #b5b5b5; flex: none; }
+.fchip.on .ico { color: var(--c); }
+.fchip-today .ico { color: var(--muted); }
+.fchip-today.on .ico { color: var(--yellow); }
+.fchip:not(.on):not(.fchip-today) { opacity: 0.75; }
+@media (max-width: 600px) {
+  /* Sur téléphone : l'icône, et son nom en petit dessous (l'icône seule n'était pas assez claire). */
+  .map-filters { gap: 5px; }
+  .fchip, .fchip.fchip-today {
+    flex-direction: column; justify-content: center; gap: 2px;
+    width: auto; min-width: 48px; height: 46px; padding: 4px 6px; border-radius: 12px;
+  }
+  .fchip .fchip-label { display: none; }
+  .fchip .fchip-short, .fchip .fchip-today-label { display: block; font-size: 10px !important; line-height: 1; white-space: nowrap; }
+  .fchip .ico { width: 18px; height: 18px; }
+}
+
+/* ---------- Notifications : une vraie icône, une couleur par genre d'alerte ---------- */
+.toast-ico { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.18); }
+.toast-ico .ico { color: inherit; }
+.toast-err .toast-ico .ico { color: #fff; }
+.toast-warning { background: #ffc400; color: #00232C; }
+.toast-warning .toast-ico { background: rgba(0,35,44,0.12); }
+.toast-police { background: #1546E0; color: #fff; }
+.toast-flash { background: #00232C; color: #fff; }
+.toast-flash .toast-ico { background: var(--yellow); }
+.toast-flash .toast-ico .ico { color: #00232C; }
+
+.tip-line { display: inline-flex; align-items: center; gap: 5px; }
+
+/* Notification cliquable : elle mène au point. */
+.toast-link { pointer-events: auto; cursor: pointer; border: 0; width: 100%; text-align: left; font: inherit; font-weight: 600; font-size: 14.5px; }
+.toast-link > span:nth-child(2) { flex: 1; }
+.toast-go { display: grid; place-items: center; flex: none; opacity: 0.8; }
+.toast-go .ico { color: inherit; }
+
+/* ---------- Fiche : à combien je suis du point ---------- */
+.how-far { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.how-far-res { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.how-far-item { display: inline-flex; align-items: center; gap: 5px; font-size: 14.5px; }
+.how-far-item .ico { color: var(--violet); }
+.how-far-wait { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+
+/* « Toujours là » verrouillé : visible mais inactif. */
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }

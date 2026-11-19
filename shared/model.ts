@@ -85,6 +85,14 @@ export function iconOf(p: Pick<Point, 'type' | 'title'>): string {
   return (meta.alert && ALERT_ICONS[p.type as AlertType]?.[p.title.trim()]) || meta.icon;
 }
 
+/**
+ * « Toujours là » (alerte ou problème) : possible seulement 15 min après le signalement
+ * ou la dernière confirmation, une fois par tranche de 15 min (on ne gonfle pas une alerte à l'infini).
+ */
+export const CONFIRM_LOCK_MIN = 15;
+export const nextConfirmAt = (x: { createdAt: number; confirmedAt?: number | null }) =>
+  Math.max(x.createdAt, x.confirmedAt ?? 0) + CONFIRM_LOCK_MIN * 60_000;
+
 /** Problème signalé sur un point existant (sans créer d'alerte séparée). */
 export const PROBLEM_DURATIONS = [30, 60, 120, 240] as const;
 export const PROBLEM_PRESETS = ['Barricade enlevée', 'Des gens dans le bâtiment', 'Manque de monde', 'Besoin de matériel'];
@@ -101,6 +109,8 @@ export interface Problem {
   creatorName: string | null;
   createdAt: number;
   expiresAt: number;
+  /** Dernier « Toujours là ». */
+  confirmedAt: number | null;
 }
 
 export const STATUS_LABEL: Record<PointStatus, string> = {
@@ -160,6 +170,8 @@ export interface Point {
   status: PointStatus | null;
   /** Dernier changement d'état (panneau, blocage). */
   statusAt: number | null;
+  /** Alerte : dernier « Toujours là ». */
+  confirmedAt: number | null;
   createdBy: string;
   creatorName: string | null;
   createdAt: number;
