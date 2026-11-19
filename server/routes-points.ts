@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db, UPLOAD_DIR } from './db';
 import { newId, type DeviceRow } from './auth';
 import { broadcast } from './events';
-import { TYPES, TYPE_KEYS, STATUSES, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
+import { TYPES, TYPE_KEYS, STATUSES, BLOCUS_COLORS, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
 import { occurrences } from '../shared/time';
 
 export const points = Router();
@@ -110,7 +110,7 @@ function normalize(input: PointInput, existing?: PointRow): Normalized | string 
   };
 
   if (meta.alert) {
-    // Warning / danger : durée de vie courte à partir de maintenant (ou on garde l'existante).
+    // Alertes (warning, danger, police) : durée de vie courte à partir de maintenant (ou on garde l'existante).
     const keep = existing && existing.type === input.type && input.durationMinutes == null;
     const startsAt = keep ? existing.starts_at! : now;
     const expiresAt = keep ? existing.expires_at! : now + (input.durationMinutes ?? 30) * 60_000;
@@ -159,6 +159,13 @@ points.post('/points', (req, res) => {
   if (typeof n === 'string') return res.status(400).json({ error: n });
   const id = newId();
   const now = Date.now();
+  if (n.type === 'blocus' && !n.color) {
+    // Une couleur différente pour chaque blocus en cours : ses blocages la reprennent sur la carte.
+    const used = new Set((db.prepare(`SELECT COALESCE(color, ?) AS c FROM points
+      WHERE type = 'blocus' AND (expires_at IS NULL OR expires_at > ?)`).all(TYPES.blocus.color, now) as { c: string }[]).map((r) => r.c));
+    const free = BLOCUS_COLORS.find((c) => !used.has(c)) ?? BLOCUS_COLORS[used.size % BLOCUS_COLORS.length];
+    n.color = free === TYPES.blocus.color ? null : free;
+  }
   db.prepare(`INSERT INTO points (id, mode, type, title, description, lat, lng, color, photo, starts_at, ends_at,
               recurrence, recurrence_until, expires_at, status, status_at, parent_id, created_by, created_at, updated_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -252,6 +259,7 @@ points.post('/points/:id/problems', (req, res) => {
   const row = getPoint(req.params.id);
   if (!row) return res.status(404).json({ error: 'Point introuvable' });
   if (TYPES[row.type].alert) return res.status(400).json({ error: 'C\'est déjà une alerte : prolonge-la plutôt.' });
+  if (row.type === 'blocus') return res.status(400).json({ error: 'Signale le problème sur le blocage concerné.' });
   const now = Date.now();
   db.prepare('INSERT INTO problems (id, point_id, message, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(newId(), row.id, body.data.message, req.device!.id, now, now + body.data.durationMinutes * 60_000);
@@ -360,8 +368,9 @@ export function releaseBlocages() {
 export function cleanup() {
   const now = Date.now();
   // Alertes expirées depuis plus de 6 h.
-  const old = db.prepare("SELECT photo FROM points WHERE type IN ('warning','danger') AND expires_at < ?").all(now - 6 * 3600_000) as { photo: string | null }[];
-  db.prepare("DELETE FROM points WHERE type IN ('warning','danger') AND expires_at < ?").run(now - 6 * 3600_000);
+  const alertTypes = TYPE_KEYS.filter((t) => TYPES[t].alert).map((t) => `'${t}'`).join(',');
+  const old = db.prepare(`SELECT photo FROM points WHERE type IN (${alertTypes}) AND expires_at < ?`).all(now - 6 * 3600_000) as { photo: string | null }[];
+  db.prepare(`DELETE FROM points WHERE type IN (${alertTypes}) AND expires_at < ?`).run(now - 6 * 3600_000);
   old.forEach((r) => r.photo && removePhoto(r.photo));
   // Photos envoyées mais jamais rattachées à un point.
   const used = new Set((db.prepare('SELECT photo FROM points WHERE photo IS NOT NULL').all() as { photo: string }[]).map((r) => r.photo));

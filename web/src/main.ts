@@ -220,8 +220,8 @@ function connectStream() {
     clearTimeout(t);
     t = window.setTimeout(() => store.refresh().catch(() => {}), 300);
     if (data.by === store.me.id) return;
-    if (data.action === 'create' && (data.type === 'warning' || data.type === 'danger')) {
-      toast(data.type === 'danger' ? 'Nouveau DANGER signalé sur la carte' : 'Nouveau warning signalé sur la carte', 'err', 6000);
+    if (data.action === 'create' && (data.type === 'warning' || data.type === 'danger' || data.type === 'police')) {
+      toast(data.type === 'police' ? 'POLICE / CRS signalée sur la carte' : data.type === 'danger' ? 'Nouveau DANGER signalé sur la carte' : 'Nouveau warning signalé sur la carte', 'err', 6000);
       navigator.vibrate?.([200, 100, 200]);
     } else if (data.action === 'problem') {
       toast(`Problème signalé : « ${data.title ?? 'un point'} »`, 'err', 6000);

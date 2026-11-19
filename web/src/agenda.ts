@@ -1,7 +1,7 @@
-import { store } from './store';
-import { TYPES, colorOf } from '../../shared/model';
+import { store, paintOf } from './store';
+import { TYPES, iconOf } from '../../shared/model';
 import { occurrences, liveProblems, type Occurrence } from '../../shared/time';
-import { h, icon, clear, time, dayLong, startOfWeek, addDays, sameDay, inkFor, startOfDay, isAllDay } from './ui';
+import { h, icon, clear, time, dayLong, startOfWeek, addDays, sameDay, startOfDay, isAllDay } from './ui';
 import { newPointFlow } from './forms';
 
 let weekStart = startOfWeek(Date.now());
@@ -47,7 +47,7 @@ export function render() {
   },
   h('span', { class: 'dow' }, fmtDow.format(d).replace('.', '')),
   h('span', { class: 'dnum' }, new Date(d).getDate()),
-  h('span', { class: 'dots' }, grouped[i].slice(0, 4).map((o) => h('i', { style: { background: colorOf(o.point) } }))),
+  h('span', { class: 'dots' }, grouped[i].slice(0, 4).map((o) => h('i', { style: { background: paintOf(o.point).color } }))),
   )));
 
   const list = h('div', { class: 'agenda-list' });
@@ -75,7 +75,7 @@ export function render() {
     strip,
     h('label', { class: 'toggle-line' },
       h('input', { type: 'checkbox', checked: showAlerts, onchange: (e: Event) => { showAlerts = (e.target as HTMLInputElement).checked; render(); } }),
-      h('span', { class: 'switch' }), 'Afficher les alertes (warning, danger)'),
+      h('span', { class: 'switch' }), 'Afficher les alertes (warning, danger, police)'),
     list,
     any ? null : h('div', { class: 'empty' },
       icon('calendar-days', 40, 1.6),
@@ -89,8 +89,7 @@ export function render() {
 function card(o: Occurrence) {
   const p = o.point;
   const meta = TYPES[p.type];
-  const bg = colorOf(p);
-  const ink = p.color ? inkFor(bg) : meta.ink;
+  const { color: bg, ink } = paintOf(p);
   const now = Date.now();
   const live = o.start <= now && o.end > now;
   const past = o.end <= now;
@@ -99,7 +98,7 @@ function card(o: Occurrence) {
     style: { background: bg, color: ink },
     onclick: () => onOpen(o),
   },
-  h('span', { class: 'ev-ico' }, icon(meta.icon, 22)),
+  h('span', { class: 'ev-ico' }, icon(iconOf(p), 22)),
   h('span', { class: 'ev-main' },
     h('span', { class: 'ev-time' },
       isAllDay(o.start, o.end) ? 'Toute la journée' : meta.alert ? `${time(o.start)} → ${time(o.end)}` : `${time(o.start)} – ${time(o.end)}`,

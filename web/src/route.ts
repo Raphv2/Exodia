@@ -1,8 +1,8 @@
-import { store } from './store';
+import { store, paintOf } from './store';
 import { api, ApiError } from './api';
-import { TYPES, STATUS_LABEL, colorOf, type Point } from '../../shared/model';
+import { TYPES, STATUS_LABEL, type Point } from '../../shared/model';
 import { isActive } from '../../shared/time';
-import { h, icon, clear, toast, inkFor } from './ui';
+import { h, icon, clear, toast } from './ui';
 import { segmented } from './forms';
 import { drawRoute, clearRoute, flyTo, locateMe } from './map';
 import { distance, fmtDistance, lastPosition, type Pos } from './geo';
@@ -146,10 +146,10 @@ export function render() {
 
   const list = h('ul', { class: 'pick-list' }, cands.map((p) => {
     const on = store.routeSelection.has(p.id);
-    const c = colorOf(p);
+    const { color: c, ink: cInk } = paintOf(p);
     return h('li', null, h('label', { class: `pick-row${on ? ' on' : ''}` },
       h('input', { type: 'checkbox', checked: on, onchange: () => toggleInRoute(p) }),
-      h('span', { class: 'pick-dot', style: { background: c, color: p.color ? inkFor(c) : TYPES[p.type].ink } }, icon(TYPES[p.type].icon, 16)),
+      h('span', { class: 'pick-dot', style: { background: c, color: cInk } }, icon(TYPES[p.type].icon, 16)),
       h('span', { class: 'pick-main' },
         h('span', { class: 'pick-title' }, p.title),
         h('span', { class: 'pick-sub' }, p.type === 'panneau' && p.status ? STATUS_LABEL[p.status] : TYPES[p.type].label, ref ? ` · ${fmtDistance(distance(ref, p))}` : ''),

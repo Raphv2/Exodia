@@ -430,8 +430,8 @@ input[type='date'].input, input[type='time'].input { padding: 8px 10px; min-widt
 .loc-status div span { font-weight: 500; font-size: 13px; color: var(--muted); }
 .loc-status.ok .ico { color: var(--green); }
 .loc-status.err { color: #c41d1d; }
-.loc-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.loc-actions .btn { background: #fff; }
+.loc-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.loc-actions .btn { background: #fff; min-width: 0; padding: 4px 8px; white-space: normal; line-height: 1.05; }
 
 details.more { border-top: 1px solid var(--line); padding-top: 12px; }
 details.more summary { cursor: pointer; font-weight: 600; color: var(--violet); list-style: none; }
@@ -747,3 +747,21 @@ details.more[open] summary::before { content: '– '; }
 .pick-check { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border: 2px solid var(--line); border-radius: 6px; background: #fff; color: #fff; }
 .pick-row.on .pick-check { background: var(--violet); border-color: var(--violet); }
 button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink); }
+
+/* ---------- Alerte police / CRS : épingle bleue qui clignote ---------- */
+.btn-police { background: #1546E0; color: #fff; }
+.btn-police:hover { background: #0f38b8; }
+.pin-police .pin-head { animation: police-blink 0.9s steps(1, end) infinite; }
+.pin-police .pin-head::after { animation-duration: 0.9s; }
+@keyframes police-blink {
+  0% { background: #1546E0; box-shadow: 0 0 0 3px rgba(21,70,224,0.45), 0 0 14px 4px rgba(21,70,224,0.7); }
+  50% { background: #5C8BFF; box-shadow: 0 0 0 3px rgba(92,139,255,0.25), -2px 3px 7px rgba(0,0,0,0.35); }
+}
+.seg-alert { border-color: var(--red); margin-bottom: 2px; }
+.seg-alert .seg-btn { color: var(--red); }
+.seg-alert .seg-btn.on { background: var(--red); color: #fff; }
+.seg-alert.seg-police { border-color: #1546E0; }
+.seg-alert.seg-police .seg-btn { color: #1546E0; }
+.seg-alert.seg-police .seg-btn.on { background: #1546E0; color: #fff; }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; }

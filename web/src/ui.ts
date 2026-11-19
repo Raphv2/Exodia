@@ -3,8 +3,16 @@ import {
   Crosshair, Download, Footprints, House, ImagePlus, Layers, LocateFixed, LogOut, Map as MapIcon, MapPin,
   Navigation, Newspaper, Package, PaintRoller, Pencil, Plus, Presentation, QrCode, Repeat, Route, Share2,
   ShieldCheck, Siren, Smartphone, Trash2, TriangleAlert, UserPlus, Users, UsersRound, X, ArrowRight, Timer,
-  CircleCheck, ListChecks, Construction, Megaphone, CircleAlert, Flag, Sun, Flame, type IconNode,
+  CircleCheck, ListChecks, Construction, Megaphone, CircleAlert, Flag, Sun, Flame, Swords, Skull, Ambulance, Ban, Shield, IdCard, Fence, Bus, FileX, EyeOff, type IconNode,
 } from 'lucide';
+
+/** Képi de police, dessiné dans le style des icônes lucide. */
+const Police = ['svg', Siren[1], [
+  ['path', { d: 'M4.2 12 3 6.6C5.8 5.2 8.9 4.5 12 4.5s6.2.7 9 2.1L19.8 12' }],
+  ['path', { d: 'M4 12h16v3H4z' }],
+  ['path', { d: 'M4 15c2 3 14 3 16 0' }],
+  ['path', { d: 'm12 6.6.75 1.5 1.65.25-1.2 1.15.3 1.65-1.5-.8-1.5.8.3-1.65-1.2-1.15 1.65-.25z' }],
+]] as unknown as IconNode;
 
 const ICONS: Record<string, IconNode> = {
   bike: Bike, calendar: Calendar, 'calendar-days': CalendarDays, camera: Camera, car: Car, check: Check,
@@ -16,7 +24,9 @@ const ICONS: Record<string, IconNode> = {
   'shield-check': ShieldCheck, siren: Siren, smartphone: Smartphone, 'trash-2': Trash2,
   'triangle-alert': TriangleAlert, 'user-plus': UserPlus, users: Users, 'users-round': UsersRound, x: X,
   'arrow-right': ArrowRight, timer: Timer, 'circle-check': CircleCheck, 'list-checks': ListChecks,
-  construction: Construction, megaphone: Megaphone, 'circle-alert': CircleAlert, flag: Flag, sun: Sun, flame: Flame,
+  construction: Construction, megaphone: Megaphone, 'circle-alert': CircleAlert, flag: Flag, sun: Sun, flame: Flame, police: Police,
+  swords: Swords, skull: Skull, ambulance: Ambulance, ban: Ban, shield: Shield, 'id-card': IdCard, fence: Fence,
+  bus: Bus, 'file-x': FileX, 'eye-off': EyeOff,
 };
 
 export function icon(name: string, size = 20, stroke = 2.25): SVGElement {

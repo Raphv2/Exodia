@@ -7,8 +7,8 @@ import {
   h, icon, clear, toast, toDateInput, toTimeInput, fromInputs, addDays, startOfDay, inkFor, isAllDay,
 } from './ui';
 import {
-  TYPES, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, STATUS_HINT, STATUSES, ALERT_DURATIONS, ALERT_PRESETS,
-  type Mode, type PointType, type Recurrence, type PointStatus, type Point, type PointInput,
+  TYPES, ALERT_ICONS, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, STATUS_HINT, STATUSES, ALERT_DURATIONS, ALERT_PRESETS,
+  type Mode, type PointType, type Recurrence, type PointStatus, type Point, type PointInput, type AlertType,
 } from '../../shared/model';
 import { isActive, nextOccurrence } from '../../shared/time';
 
@@ -26,14 +26,14 @@ export function segmented<T extends string>(options: { value: T; label: string; 
   return wrap;
 }
 
-export function chips<T extends string | number>(options: { value: T; label: string }[], value: T | null, onChange: (v: T) => void, accent?: string) {
+export function chips<T extends string | number>(options: { value: T; label: string; icon?: string }[], value: T | null, onChange: (v: T) => void, accent?: string) {
   const wrap = h('div', { class: 'chips', role: 'radiogroup' });
   const render = (v: T | null) => {
     wrap.replaceChildren(...options.map((o) => h('button', {
       type: 'button', role: 'radio', 'aria-checked': String(o.value === v), class: `chip${o.value === v ? ' on' : ''}`,
       style: accent && o.value === v ? { background: accent, borderColor: accent, color: inkFor(accent) } : undefined,
       onclick: () => { render(o.value); onChange(o.value); },
-    }, o.label)));
+    }, o.icon ? icon(o.icon, 16) : null, o.label)));
   };
   render(value);
   return wrap;
@@ -173,7 +173,7 @@ export async function newPointFlow(mode: Mode = 'fixe', preset: Preset = {}) {
 }
 
 export function editPoint(p: Point) {
-  if (TYPES[p.type].alert) return openAlertForm(p.type as 'warning' | 'danger', p);
+  if (TYPES[p.type].alert) return openAlertForm(p.type as AlertType, p);
   openPointForm(draftFrom(p, p));
 }
 
@@ -311,9 +311,9 @@ function openPointForm(d: Draft) {
   render();
 }
 
-// ---------- Alerte rapide : warning / danger ----------
+// ---------- Alerte rapide : warning / danger / police ----------
 
-export function openAlertForm(type: 'warning' | 'danger', existing?: Point, presetPos?: Pos) {
+export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos) {
   const meta = TYPES[type];
   const state = {
     pos: (existing ? { lat: existing.lat, lng: existing.lng } : presetPos ?? null) as Pos | null,
@@ -366,10 +366,17 @@ export function openAlertForm(type: 'warning' | 'danger', existing?: Point, pres
 
   const titleInput = h('input', { class: 'input', type: 'text', maxlength: '80', value: state.title, oninput: (e: Event) => (state.title = (e.target as HTMLInputElement).value) }) as HTMLInputElement;
 
+  // Depuis le bouton Danger : choisir entre un danger « classique » et la présence de police / CRS.
+  const switchToPolice = !existing && (type === 'danger' || type === 'police') ? segmented<AlertType>([
+    { value: 'danger', label: 'Danger', icon: 'siren' },
+    { value: 'police', label: 'Police / CRS', icon: 'police' },
+  ], type, (t) => { sheet.close(); openAlertForm(t, undefined, state.pos ?? undefined); }, `seg-alert seg-${type}`) : null;
+
   clear(body,
+    switchToPolice,
     locCard,
     h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Quoi ?'),
-      chips(ALERT_PRESETS[type].map((p) => ({ value: p, label: p })), ALERT_PRESETS[type].includes(state.title) ? state.title : null, (v) => { state.title = v; titleInput.value = v; }, meta.color),
+      chips(ALERT_PRESETS[type].map((p) => ({ value: p, label: p, icon: ALERT_ICONS[type][p] })), ALERT_PRESETS[type].includes(state.title) ? state.title : null, (v) => { state.title = v; titleInput.value = v; }, meta.color),
       titleInput),
     existing ? null : h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Visible pendant'),
       chips(ALERT_DURATIONS.map((m) => ({ value: m, label: durLabel(m) })), state.duration, (v) => { state.duration = v; setSubmitLabel(); }, meta.color)),
@@ -394,7 +401,7 @@ export function openAlertForm(type: 'warning' | 'danger', existing?: Point, pres
       const { point } = existing ? await api.updatePoint(existing.id, input) : await api.createPoint(input);
       store.upsert(point);
       sheet.close();
-      toast(existing ? 'Alerte mise à jour' : `${meta.label} signalé pour ${durLabel(state.duration)}`, 'ok');
+      toast(existing ? 'Alerte mise à jour' : `${meta.label} signalé${type === 'police' ? 'e' : ''} pour ${durLabel(state.duration)}`, 'ok');
       flyTo(point, 16);
     } catch (e) {
       toast((e as ApiError).message, 'err', 5000);

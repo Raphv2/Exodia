@@ -8,7 +8,7 @@ export type BlocageStatus = 'tenu' | 'vide' | 'leve';
 export type PointStatus = PanneauStatus | BlocageStatus;
 
 export const TYPE_KEYS = [
-  'panneau', 'collage', 'ag', 'tractage', 'rassemblement', 'blocus', 'blocage', 'materiel', 'local', 'autre', 'warning', 'danger',
+  'panneau', 'collage', 'ag', 'tractage', 'rassemblement', 'blocus', 'blocage', 'materiel', 'local', 'autre', 'warning', 'danger', 'police',
 ] as const;
 export type PointType = (typeof TYPE_KEYS)[number];
 
@@ -41,14 +41,31 @@ export const TYPES: Record<PointType, TypeMeta> = {
   autre:    { label: 'Autre', short: 'Autre', color: '#5B6770', ink: '#fff', icon: 'map-pin', modes: ['fixe', 'event'], placeholder: 'Titre du point' },
   warning:  { label: 'Warning', short: 'Warning', color: '#FFC400', ink: '#00232C', icon: 'triangle-alert', modes: ['event'], alert: true, placeholder: 'Attention' },
   danger:   { label: 'Danger', short: 'Danger', color: '#F53B3B', ink: '#fff', icon: 'siren', modes: ['event'], alert: true, placeholder: 'Danger' },
+  police:   { label: 'Police / CRS', short: 'Police', color: '#1546E0', ink: '#fff', icon: 'police', modes: ['event'], alert: true, placeholder: 'Police' },
 };
 
 export const ALERT_DURATIONS = [15, 30, 60, 120] as const;
 
-export const ALERT_PRESETS: Record<'warning' | 'danger', string[]> = {
+export type AlertType = 'warning' | 'danger' | 'police';
+
+export const ALERT_PRESETS: Record<AlertType, string[]> = {
   warning: ['Affiches arrachées', 'Panneau recouvert', 'Zone tendue', 'Passage difficile'],
   danger: ['Agression', 'Groupe hostile', 'Personne blessée', 'Zone à éviter'],
+  police: ['CRS', 'Police', 'BAC', 'Contrôle d\'identité', 'Nasse', 'Fourgons'],
 };
+
+/** Icône propre à chaque alerte prédéfinie : on comprend le problème d'un coup d'œil sur la carte. */
+export const ALERT_ICONS: Record<AlertType, Record<string, string>> = {
+  warning: { 'Affiches arrachées': 'file-x', 'Panneau recouvert': 'eye-off', 'Zone tendue': 'triangle-alert', 'Passage difficile': 'footprints' },
+  danger: { 'Agression': 'swords', 'Groupe hostile': 'skull', 'Personne blessée': 'ambulance', 'Zone à éviter': 'ban' },
+  police: { 'CRS': 'shield', 'Police': 'police', 'BAC': 'car', 'Contrôle d\'identité': 'id-card', 'Nasse': 'fence', 'Fourgons': 'bus' },
+};
+
+/** Icône à afficher pour un point (alerte : selon le problème choisi, sinon celle du type). */
+export function iconOf(p: Pick<Point, 'type' | 'title'>): string {
+  const meta = TYPES[p.type];
+  return (meta.alert && ALERT_ICONS[p.type as AlertType]?.[p.title.trim()]) || meta.icon;
+}
 
 /** Problème signalé sur un point existant (sans créer d'alerte séparée). */
 export const PROBLEM_DURATIONS = [30, 60, 120, 240] as const;
@@ -143,7 +160,7 @@ export interface PointInput {
   endsAt?: number | null;
   recurrence?: Recurrence;
   recurrenceUntil?: number | null;
-  /** Pour warning / danger : durée de vie à partir de maintenant. */
+  /** Pour les alertes (warning, danger, police) : durée de vie à partir de maintenant. */
   durationMinutes?: number;
   status?: PointStatus | null;
   /** Blocage : blocus auquel il est rattaché. À la fin du blocus, un blocage « tenu » passe à « sans personne ». */
@@ -182,4 +199,10 @@ export interface CreatedInvite {
 }
 
 export const colorOf = (p: Pick<Point, 'type' | 'color'>) => p.color ?? TYPES[p.type].color;
+
+/**
+ * Couleurs attribuées automatiquement aux blocus (une différente par blocus en cours),
+ * reprises par les blocages qui leur sont rattachés.
+ */
+export const BLOCUS_COLORS = ['#5C1033', '#0B6E4F', '#1E3A8A', '#B45309', '#7C2D92', '#0E7490', '#9D174D', '#3F6212'];
 export const isAlert = (t: PointType) => !!TYPES[t].alert;

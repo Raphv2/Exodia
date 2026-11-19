@@ -1,5 +1,6 @@
 import { api } from './api';
-import type { Device, Point } from '../../shared/model';
+import { TYPES, colorOf, type Device, type Point } from '../../shared/model';
+import { inkFor } from './ui';
 
 export type View = 'map' | 'agenda' | 'route' | 'team';
 export type Group = 'fixe' | 'event' | 'alert';
@@ -66,3 +67,10 @@ class Store {
 }
 
 export const store = new Store();
+
+/** Couleur d'un point et de son icône. Un blocage rattaché prend la couleur de son blocus. */
+export function paintOf(p: Point): { color: string; ink: string } {
+  const src = p.type === 'blocage' && p.parentId ? store.points.find((x) => x.id === p.parentId) ?? p : p;
+  const color = colorOf(src);
+  return { color, ink: src.color ? inkFor(color) : TYPES[src.type].ink };
+}

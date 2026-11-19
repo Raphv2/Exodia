@@ -1,10 +1,10 @@
 import { api, photoUrl, ApiError } from './api';
-import { store } from './store';
+import { store, paintOf } from './store';
 import { openSheet, confirmSheet } from './sheet';
 import { editPoint, durLabel, chips, newPointFlow } from './forms';
-import { h, icon, clear, toast, rangeLabel, relative, inkFor, dateLong } from './ui';
+import { h, icon, clear, toast, rangeLabel, relative, dateLong } from './ui';
 import {
-  TYPES, STATUS_LABEL, STATUS_HINT, STATUSES, RECURRENCE_LABEL, PROBLEM_PRESETS, PROBLEM_DURATIONS, colorOf,
+  TYPES, iconOf, STATUS_LABEL, STATUS_HINT, STATUSES, RECURRENCE_LABEL, PROBLEM_PRESETS, PROBLEM_DURATIONS,
   type Point, type Problem,
 } from '../../shared/model';
 import { nextOccurrence, isActive, liveProblems } from '../../shared/time';
@@ -125,8 +125,7 @@ export function scheduleText(p: Point): string | null {
 
 export function openDetail(p: Point) {
   const meta = TYPES[p.type];
-  const color = colorOf(p);
-  const ink = p.color ? inkFor(color) : meta.ink;
+  const { color, ink } = paintOf(p);
   const canEdit = store.canEdit(p);
   const sched = scheduleText(p);
 
@@ -206,7 +205,7 @@ export function openDetail(p: Point) {
   const body = h('div', { class: 'detail' },
     p.photo ? h('a', { href: photoUrl(p.photo), target: '_blank', rel: 'noopener', class: 'detail-photo' }, h('img', { src: photoUrl(p.photo), alt: `Photo : ${p.title}`, loading: 'lazy' })) : null,
     h('div', { class: 'detail-tags' },
-      h('span', { class: 'tag', style: { background: color, color: ink } }, icon(meta.icon, 15), meta.label),
+      h('span', { class: 'tag', style: { background: color, color: ink } }, icon(iconOf(p), 15), meta.label),
       p.mode === 'fixe' ? h('span', { class: 'tag tag-outline' }, 'Point fixe') : null,
       p.recurrence !== 'none' ? h('span', { class: 'tag tag-outline' }, icon('repeat', 14), RECURRENCE_LABEL[p.recurrence]) : null,
     ),
@@ -218,7 +217,8 @@ export function openDetail(p: Point) {
     statusRow,
     blocusSection,
     p.description ? h('p', { class: 'detail-desc' }, p.description) : null,
-    meta.alert ? null : h('button', { class: 'btn btn-outline-danger btn-block', type: 'button', onclick: () => { sheet.close(); openProblemForm(p); } },
+    // Sur un blocus (le RDV), un problème ne dit pas où aller : on le signale sur le blocage concerné.
+    meta.alert || p.type === 'blocus' ? null : h('button', { class: 'btn btn-outline-danger btn-block', type: 'button', onclick: () => { sheet.close(); openProblemForm(p); } },
       icon('circle-alert', 18), 'Signaler un problème ici'),
     actions,
     h('p', { class: 'detail-meta' }, `Ajouté par ${p.creatorName ?? 'un appareil retiré'} · ${relative(p.createdAt)}`),
