@@ -54,6 +54,20 @@ export const ALERT_PRESETS: Record<AlertType, string[]> = {
   police: ['CRS', 'Police', 'BAC', 'Contrôle d\'identité', 'Nasse', 'Fourgons'],
 };
 
+/** Matériel proposé à la création d'un événement (on peut aussi en ajouter à la main). */
+export const MATERIAL_PRESETS: Partial<Record<PointType, string[]>> = {
+  tractage: ['Tracts', 'Affiches', 'Colle', 'Table', 'Chasubles', 'Mégaphone', 'Flyers'],
+  collage: ['Affiches', 'Colle', 'Seaux', 'Balais', 'Gants'],
+  rassemblement: ['Banderole', 'Affiches', 'Colle', 'Mégaphone', 'Drapeaux', 'Pancartes', 'Chasubles'],
+  blocus: ['Poubelles', 'Palettes', 'Banderole', 'Affiches', 'Colle', 'Mégaphone', 'Scotch'],
+  ag: ['Affiches', 'Colle', 'Chaises', 'Vidéoprojecteur', 'Rallonge', 'Paperboard'],
+  materiel: ['Affiches', 'Colle', 'Voiture', 'Diable', 'Sacs'],
+};
+export const MATERIAL_DEFAULT = ['Tracts', 'Banderole', 'Mégaphone', 'Affiches', 'Colle'];
+
+/** Le signalement de problème n'a de sens que sur un lieu tenu : le blocage. */
+export const canReportProblem = (t: PointType) => t === 'blocage';
+
 /** Icône propre à chaque alerte prédéfinie : on comprend le problème d'un coup d'œil sur la carte. */
 export const ALERT_ICONS: Record<AlertType, Record<string, string>> = {
   warning: { 'Affiches arrachées': 'file-x', 'Panneau recouvert': 'eye-off', 'Zone tendue': 'triangle-alert', 'Passage difficile': 'footprints' },
@@ -70,6 +84,8 @@ export function iconOf(p: Pick<Point, 'type' | 'title'>): string {
 /** Problème signalé sur un point existant (sans créer d'alerte séparée). */
 export const PROBLEM_DURATIONS = [30, 60, 120, 240] as const;
 export const PROBLEM_PRESETS = ['Barricade enlevée', 'Des gens dans le bâtiment', 'Manque de monde', 'Besoin de matériel'];
+
+export interface Person { id: string; name: string }
 
 export interface Problem {
   id: string;
@@ -115,7 +131,9 @@ export const RECURRENCE_LABEL: Record<Recurrence, string> = {
 };
 
 export const COLOR_CHOICES = [
-  '#7B13D6', '#E5007D', '#F53B3B', '#FF7A00', '#FFC400', '#00A86B', '#0098B6', '#00232C',
+  '#7B13D6', '#A855F7', '#E5007D', '#F472B6', '#F53B3B', '#8B1E3F', '#FF7A00', '#B45309',
+  '#FFC400', '#84CC16', '#00A86B', '#0B6E4F', '#0098B6', '#1F4FD1', '#1E3A8A', '#5B6770',
+  '#00232C', '#000000',
 ];
 
 export interface Point {
@@ -142,6 +160,12 @@ export interface Point {
   updatedAt: number;
   /** Blocage : le blocus auquel il est rattaché. */
   parentId: string | null;
+  /** Événement : matériel à prévoir. */
+  material: string[];
+  /** Événement : qui a dit venir. */
+  participants: Person[];
+  /** Événement : qui fournit quoi (clé = élément de `material`). Fournir n'oblige pas à venir. */
+  providers: Record<string, Person[]>;
   /** Problèmes en cours (non réglés, non expirés). */
   problems: Problem[];
 }
@@ -165,6 +189,8 @@ export interface PointInput {
   status?: PointStatus | null;
   /** Blocage : blocus auquel il est rattaché. À la fin du blocus, un blocage « tenu » passe à « sans personne ». */
   parentId?: string | null;
+  /** Événement : matériel à prévoir. */
+  material?: string[];
 }
 
 export interface Device {

@@ -75,9 +75,22 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS problems_point ON problems(point_id);
 `);
 
+// Engagements sur un événement : « je participe » et « je fournis tel matériel » (indépendants).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pledges (
+    point_id    TEXT NOT NULL REFERENCES points(id) ON DELETE CASCADE,
+    device_id   TEXT NOT NULL,
+    kind        TEXT NOT NULL CHECK (kind IN ('participe','fournit')),
+    item        TEXT NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL,
+    PRIMARY KEY (point_id, device_id, kind, item)
+  );
+`);
+
 // Migrations légères (ajout de colonnes sur une base existante).
 const cols = (table: string) => (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
 if (!cols('points').includes('parent_id')) db.exec('ALTER TABLE points ADD COLUMN parent_id TEXT');
+if (!cols('points').includes('material')) db.exec('ALTER TABLE points ADD COLUMN material TEXT');
 if (!cols('points').includes('status_at')) db.exec('ALTER TABLE points ADD COLUMN status_at INTEGER');
 db.exec('CREATE INDEX IF NOT EXISTS points_parent ON points(parent_id)');
 // Les blocages étaient des événements : ce sont désormais des points fixes (la barricade reste en place).

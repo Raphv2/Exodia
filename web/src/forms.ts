@@ -7,7 +7,7 @@ import {
   h, icon, clear, toast, toDateInput, toTimeInput, fromInputs, addDays, startOfDay, inkFor, isAllDay,
 } from './ui';
 import {
-  TYPES, ALERT_ICONS, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, STATUS_HINT, STATUSES, ALERT_DURATIONS, ALERT_PRESETS,
+  TYPES, ALERT_ICONS, MATERIAL_PRESETS, MATERIAL_DEFAULT, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, STATUS_HINT, STATUSES, ALERT_DURATIONS, ALERT_PRESETS,
   type Mode, type PointType, type Recurrence, type PointStatus, type Point, type PointInput, type AlertType,
 } from '../../shared/model';
 import { isActive, nextOccurrence } from '../../shared/time';
@@ -45,6 +45,37 @@ export const field = (label: string, control: Node, hint?: string, optional = fa
     control,
     hint ? h('span', { class: 'field-hint' }, hint) : null,
   );
+
+/** Liste de matériel : puces à cocher (suggestions du type + ajouts) et champ pour en ajouter. */
+function materialPicker(d: { type: PointType; material: string[] }, accent: string) {
+  const wrap = h('div', { class: 'material-pick' });
+  const render = () => {
+    const suggestions = MATERIAL_PRESETS[d.type] ?? MATERIAL_DEFAULT;
+    const all = [...suggestions, ...d.material.filter((m) => !suggestions.includes(m))];
+    const input = h('input', { class: 'input', type: 'text', maxlength: '40', placeholder: 'Autre chose ?', enterkeyhint: 'done' }) as HTMLInputElement;
+    const add = () => {
+      const v = input.value.trim();
+      if (v && !d.material.some((m) => m.toLowerCase() === v.toLowerCase()) && d.material.length < 20) d.material.push(v);
+      render();
+      (wrap.querySelector('input') as HTMLInputElement | null)?.focus();
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    wrap.replaceChildren(
+      h('div', { class: 'chips' }, all.map((m) => {
+        const on = d.material.includes(m);
+        return h('button', {
+          type: 'button', class: `chip${on ? ' on' : ''}`, 'aria-pressed': String(on),
+          style: on ? { background: accent, borderColor: accent, color: inkFor(accent) } : undefined,
+          onclick: () => { d.material = on ? d.material.filter((x) => x !== m) : [...d.material, m]; render(); },
+        }, on ? icon('check', 15) : null, m);
+      })),
+      h('div', { class: 'material-add' }, input,
+        h('button', { type: 'button', class: 'btn btn-small btn-light', 'aria-label': 'Ajouter ce matériel', onclick: add }, icon('plus', 16))),
+    );
+  };
+  render();
+  return wrap;
+}
 
 const group = (label: string, ...content: Node[]) => h('div', { class: 'field' }, h('span', { class: 'field-label' }, label), ...content);
 
@@ -118,6 +149,8 @@ interface Draft {
   status: PointStatus;
   /** Blocage : blocus auquel il est rattaché. */
   parentId: string | null;
+  /** Événement : matériel à prévoir. */
+  material: string[];
   allDay: boolean;
   /** L'utilisateur a choisi lui-même « toute la journée » ou non. */
   allDayTouched: boolean;
@@ -162,6 +195,7 @@ function draftFrom(p: Point | null, pos: Pos, mode: Mode = 'fixe', preset: Prese
     until: p?.recurrenceUntil ? toDateInput(p.recurrenceUntil) : '',
     status: p?.status ?? 'a_coller',
     parentId: p ? p.parentId : preset.parentId !== undefined ? preset.parentId : activeBlocus()[0]?.id ?? null,
+    material: [...(p?.material ?? [])],
   };
 }
 
@@ -238,12 +272,17 @@ function openPointForm(d: Draft) {
       blocusList.length ? h('span', { class: 'field-hint' }, 'À la fin du blocus, s\'il est encore « tenu », le blocage passe tout seul à « sans personne ».') : null,
     ) : null;
 
+    // La couleur du type est la première : la choisir revient à ne pas personnaliser (null).
+    const typeColor = TYPES[d.type].color;
     const colors = h('div', { class: 'swatches' },
-      [null, ...COLOR_CHOICES.filter((c) => c !== TYPES[d.type].color)].map((c) => h('button', {
-        type: 'button', class: `swatch${(d.color ?? null) === c ? ' on' : ''}`, style: { background: c ?? TYPES[d.type].color },
-        'aria-label': c ? `Couleur ${c}` : 'Couleur du type', title: c ? c : 'Couleur du type',
-        onclick: () => { d.color = c; render(); },
-      }, c === null ? h('span', { class: 'swatch-auto' }, 'auto') : null)));
+      [typeColor, ...COLOR_CHOICES.filter((c) => c.toLowerCase() !== typeColor.toLowerCase())].map((c) => {
+        const on = (d.color ?? typeColor).toLowerCase() === c.toLowerCase();
+        return h('button', {
+          type: 'button', class: `swatch${on ? ' on' : ''}`, style: { background: c },
+          'aria-label': c === typeColor ? 'Couleur du type' : `Couleur ${c}`, 'aria-pressed': String(on),
+          onclick: () => { d.color = c === typeColor ? null : c; render(); },
+        });
+      }));
 
     clear(body,
       segmented<Mode>([
@@ -253,6 +292,9 @@ function openPointForm(d: Draft) {
       group('Type', typeGrid),
       field('Titre', title),
       schedule,
+      d.mode === 'event' ? h('div', { class: 'field' },
+        h('span', { class: 'field-label' }, 'Matériel nécessaire', h('em', null, ' · facultatif')),
+        materialPicker(d, color)) : null,
       status,
       blocus,
       group('Photo', photoPicker(d.photo, () => {})),
@@ -276,6 +318,7 @@ function openPointForm(d: Draft) {
       mode: d.mode, type: d.type, title: d.title.trim(), description: d.description.trim() || null,
       lat: d.lat, lng: d.lng, color: d.color, status: STATUSES[d.type] ? d.status : null,
       parentId: d.type === 'blocage' ? d.parentId : null,
+      material: d.mode === 'event' ? d.material : [],
     };
     if (d.mode === 'event') {
       if (!d.date || (!d.allDay && (!d.start || !d.end))) return toast('Indique la date, l\'heure de début et de fin.', 'err');

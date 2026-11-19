@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db, UPLOAD_DIR } from './db';
 import { newId, type DeviceRow } from './auth';
 import { broadcast } from './events';
-import { TYPES, TYPE_KEYS, STATUSES, BLOCUS_COLORS, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
+import { TYPES, TYPE_KEYS, STATUSES, BLOCUS_COLORS, canReportProblem, type Person, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
 import { occurrences } from '../shared/time';
 
 export const points = Router();
@@ -16,19 +16,46 @@ interface PointRow {
   id: string; mode: Point['mode']; type: Point['type']; title: string; description: string | null;
   lat: number; lng: number; color: string | null; photo: string | null;
   starts_at: number | null; ends_at: number | null; recurrence: Point['recurrence']; recurrence_until: number | null;
-  expires_at: number | null; status: Point['status']; status_at: number | null; parent_id: string | null; created_by: string; created_at: number; updated_at: number;
+  expires_at: number | null; status: Point['status']; status_at: number | null; parent_id: string | null; material: string | null; created_by: string; created_at: number; updated_at: number;
   creator_name?: string | null;
 }
 
-const toDto = (r: PointRow, problems: Problem[] = []): Point => ({
+interface Pledges { participants: Person[]; providers: Record<string, Person[]> }
+const NO_PLEDGES: Pledges = { participants: [], providers: {} };
+
+/** Qui participe et qui fournit quoi, par point (appareils retirés exclus). */
+function pledgesFor(pointId?: string): Map<string, Pledges> {
+  const sql = `SELECT pl.point_id, pl.kind, pl.item, d.id AS device_id, d.name FROM pledges pl
+    JOIN devices d ON d.id = pl.device_id AND d.revoked_at IS NULL ${pointId ? 'WHERE pl.point_id = ?' : ''} ORDER BY pl.created_at`;
+  const rows = (pointId ? db.prepare(sql).all(pointId) : db.prepare(sql).all()) as unknown as
+    { point_id: string; kind: string; item: string; device_id: string; name: string }[];
+  const map = new Map<string, Pledges>();
+  for (const r of rows) {
+    if (!map.has(r.point_id)) map.set(r.point_id, { participants: [], providers: {} });
+    const pl = map.get(r.point_id)!;
+    const who = { id: r.device_id, name: r.name };
+    if (r.kind === 'participe') pl.participants.push(who);
+    else (pl.providers[r.item] ??= []).push(who);
+  }
+  return map;
+}
+
+const toDto = (r: PointRow, problems: Problem[] = [], pledges: Pledges = NO_PLEDGES): Point => ({
   id: r.id, mode: r.mode, type: r.type, title: r.title, description: r.description,
   lat: r.lat, lng: r.lng, color: r.color, photo: r.photo,
   startsAt: r.starts_at, endsAt: r.ends_at, recurrence: r.recurrence, recurrenceUntil: r.recurrence_until,
   expiresAt: r.expires_at, status: r.status, createdBy: r.created_by, creatorName: r.creator_name ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at,
-  statusAt: r.status_at ?? null, parentId: r.parent_id ?? null,
+  statusAt: r.status_at ?? null, parentId: r.parent_id ?? null, material: parseMaterial(r.material),
   problems,
+  participants: pledges.participants,
+  providers: pledges.providers,
 });
+
+function parseMaterial(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch { return []; }
+}
 
 const SELECT = 'SELECT p.*, d.name AS creator_name FROM points p LEFT JOIN devices d ON d.id = p.created_by';
 const getPoint = (id: string) => db.prepare(`${SELECT} WHERE p.id = ?`).get(id) as PointRow | undefined;
@@ -61,7 +88,7 @@ function activeProblems(pointId?: string): Map<string, Problem[]> {
 /** Un point complet (avec ses problèmes en cours), prêt à renvoyer. */
 function pointDto(id: string): Point | null {
   const row = getPoint(id);
-  return row ? toDto(row, activeProblems(id).get(id) ?? []) : null;
+  return row ? toDto(row, activeProblems(id).get(id) ?? [], pledgesFor(id).get(id)) : null;
 }
 
 const inputSchema = z.object({
@@ -80,6 +107,7 @@ const inputSchema = z.object({
   durationMinutes: z.number().int().min(5).max(24 * 60).optional(),
   status: z.enum(['a_coller', 'colle', 'abime', 'tenu', 'vide', 'leve']).nullish(),
   parentId: z.string().max(40).nullish(),
+  material: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
 });
 
 /** L'état demandé est-il valable pour ce type de point ? */
@@ -107,6 +135,7 @@ function normalize(input: PointInput, existing?: PointRow): Normalized | string 
     mode, type: input.type, title: input.title, description: input.description || null,
     lat: input.lat, lng: input.lng, color: input.color || null, photo: input.photo || null,
     parent_id: null as string | null,
+    material: null as string | null,
   };
 
   if (meta.alert) {
@@ -137,8 +166,10 @@ function normalize(input: PointInput, existing?: PointRow): Normalized | string 
   const recurrence = input.recurrence ?? 'none';
   const until = recurrence === 'none' ? null : input.recurrenceUntil ?? null;
   if (until != null && until < input.startsAt) return 'La date de fin de répétition est avant le premier événement.';
+  const material = [...new Set(input.material ?? [])];
   return {
-    ...base, starts_at: input.startsAt, ends_at: input.endsAt, recurrence, recurrence_until: until,
+    ...base, material: material.length ? JSON.stringify(material) : null,
+    starts_at: input.startsAt, ends_at: input.endsAt, recurrence, recurrence_until: until,
     expires_at: recurrence === 'none' ? input.endsAt : until,
     status: null,
   };
@@ -149,7 +180,8 @@ const canEdit = (me: DeviceRow, row: PointRow) => me.role === 'admin' || row.cre
 points.get('/points', (_req, res) => {
   const rows = db.prepare(`${SELECT} ORDER BY p.created_at`).all() as unknown as PointRow[];
   const problems = activeProblems();
-  res.json({ points: rows.map((r) => toDto(r, problems.get(r.id) ?? [])) });
+  const pledges = pledgesFor();
+  res.json({ points: rows.map((r) => toDto(r, problems.get(r.id) ?? [], pledges.get(r.id))) });
 });
 
 points.post('/points', (req, res) => {
@@ -167,10 +199,10 @@ points.post('/points', (req, res) => {
     n.color = free === TYPES.blocus.color ? null : free;
   }
   db.prepare(`INSERT INTO points (id, mode, type, title, description, lat, lng, color, photo, starts_at, ends_at,
-              recurrence, recurrence_until, expires_at, status, status_at, parent_id, created_by, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+              recurrence, recurrence_until, expires_at, status, status_at, parent_id, material, created_by, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, n.mode, n.type, n.title, n.description, n.lat, n.lng, n.color, n.photo, n.starts_at, n.ends_at,
-      n.recurrence, n.recurrence_until, n.expires_at, n.status, n.status ? now : null, n.parent_id, req.device!.id, now, now);
+      n.recurrence, n.recurrence_until, n.expires_at, n.status, n.status ? now : null, n.parent_id, n.material, req.device!.id, now, now);
   broadcast('points', { id, by: req.device!.id, action: 'create', type: n.type });
   res.status(201).json({ point: pointDto(id)! });
 });
@@ -186,9 +218,15 @@ points.put('/points/:id', (req, res) => {
   const now = Date.now();
   const statusAt = n.status === row.status ? row.status_at : n.status ? now : null;
   db.prepare(`UPDATE points SET mode=?, type=?, title=?, description=?, lat=?, lng=?, color=?, photo=?, starts_at=?, ends_at=?,
-              recurrence=?, recurrence_until=?, expires_at=?, status=?, status_at=?, parent_id=?, updated_at=? WHERE id=?`)
+              recurrence=?, recurrence_until=?, expires_at=?, status=?, status_at=?, parent_id=?, material=?, updated_at=? WHERE id=?`)
     .run(n.mode, n.type, n.title, n.description, n.lat, n.lng, n.color, n.photo, n.starts_at, n.ends_at,
-      n.recurrence, n.recurrence_until, n.expires_at, n.status, statusAt, n.parent_id, now, row.id);
+      n.recurrence, n.recurrence_until, n.expires_at, n.status, statusAt, n.parent_id, n.material, now, row.id);
+  // Matériel retiré de la liste : les « je fournis » correspondants n'ont plus lieu d'être.
+  const kept = new Set(parseMaterial(n.material));
+  for (const r of db.prepare("SELECT DISTINCT item FROM pledges WHERE point_id = ? AND kind = 'fournit'").all(row.id) as { item: string }[]) {
+    if (!kept.has(r.item)) db.prepare("DELETE FROM pledges WHERE point_id = ? AND kind = 'fournit' AND item = ?").run(row.id, r.item);
+  }
+  if (n.mode !== 'event' || TYPES[n.type].alert) db.prepare('DELETE FROM pledges WHERE point_id = ?').run(row.id);
   if (row.type === 'blocus' && n.type !== 'blocus') db.prepare('UPDATE points SET parent_id = NULL WHERE parent_id = ?').run(row.id);
   if (row.type === 'blocus') releaseBlocages();
   if (row.photo && row.photo !== n.photo) removePhoto(row.photo);
@@ -249,6 +287,31 @@ points.post('/points/:id/finish', (req, res) => {
   res.json({ point: pointDto(row.id)! });
 });
 
+/** « Je participe » / « je ne participe plus » : chacun pour soi. */
+points.post('/points/:id/participate', (req, res) => {
+  const on = z.boolean().safeParse(req.body?.on);
+  if (!on.success) return res.status(400).json({ error: 'Requête invalide' });
+  const row = getPoint(req.params.id);
+  if (!row || row.mode !== 'event' || TYPES[row.type].alert) return res.status(404).json({ error: 'Événement introuvable' });
+  if (on.data) db.prepare("INSERT OR IGNORE INTO pledges (point_id, device_id, kind, item, created_at) VALUES (?, ?, 'participe', '', ?)").run(row.id, req.device!.id, Date.now());
+  else db.prepare("DELETE FROM pledges WHERE point_id = ? AND device_id = ? AND kind = 'participe'").run(row.id, req.device!.id);
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  res.json({ point: pointDto(row.id)! });
+});
+
+/** « Je fournis » un élément du matériel (sans forcément venir). */
+points.post('/points/:id/provide', (req, res) => {
+  const body = z.object({ item: z.string().trim().min(1).max(40), on: z.boolean() }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'Requête invalide' });
+  const row = getPoint(req.params.id);
+  if (!row || row.mode !== 'event' || TYPES[row.type].alert) return res.status(404).json({ error: 'Événement introuvable' });
+  if (!parseMaterial(row.material).includes(body.data.item)) return res.status(400).json({ error: 'Ce matériel n\'est pas dans la liste.' });
+  if (body.data.on) db.prepare("INSERT OR IGNORE INTO pledges (point_id, device_id, kind, item, created_at) VALUES (?, ?, 'fournit', ?, ?)").run(row.id, req.device!.id, body.data.item, Date.now());
+  else db.prepare("DELETE FROM pledges WHERE point_id = ? AND device_id = ? AND kind = 'fournit' AND item = ?").run(row.id, req.device!.id, body.data.item);
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  res.json({ point: pointDto(row.id)! });
+});
+
 /** Signaler un problème sur un point : tout le monde peut le faire. */
 points.post('/points/:id/problems', (req, res) => {
   const body = z.object({
@@ -259,7 +322,7 @@ points.post('/points/:id/problems', (req, res) => {
   const row = getPoint(req.params.id);
   if (!row) return res.status(404).json({ error: 'Point introuvable' });
   if (TYPES[row.type].alert) return res.status(400).json({ error: 'C\'est déjà une alerte : prolonge-la plutôt.' });
-  if (row.type === 'blocus') return res.status(400).json({ error: 'Signale le problème sur le blocage concerné.' });
+  if (!canReportProblem(row.type)) return res.status(400).json({ error: 'On ne signale un problème que sur un blocage.' });
   const now = Date.now();
   db.prepare('INSERT INTO problems (id, point_id, message, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(newId(), row.id, body.data.message, req.device!.id, now, now + body.data.durationMinutes * 60_000);

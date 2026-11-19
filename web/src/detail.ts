@@ -4,7 +4,7 @@ import { openSheet, confirmSheet } from './sheet';
 import { editPoint, durLabel, chips, newPointFlow } from './forms';
 import { h, icon, clear, toast, rangeLabel, relative, dateLong } from './ui';
 import {
-  TYPES, iconOf, STATUS_LABEL, STATUS_HINT, STATUSES, RECURRENCE_LABEL, PROBLEM_PRESETS, PROBLEM_DURATIONS,
+  TYPES, iconOf, canReportProblem, STATUS_LABEL, STATUS_HINT, STATUSES, RECURRENCE_LABEL, PROBLEM_PRESETS, PROBLEM_DURATIONS,
   type Point, type Problem,
 } from '../../shared/model';
 import { nextOccurrence, isActive, liveProblems } from '../../shared/time';
@@ -107,6 +107,39 @@ function openAttachSheet(blocus: Point) {
     body: h('div', { class: 'form' }, h('p', { class: 'muted' }, `Coche les blocages qui font partie de « ${blocus.title} ».`), list),
     footer: h('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: () => { s.close(); openDetail(store.points.find((x) => x.id === blocus.id) ?? blocus); } }, 'Terminé'),
   });
+}
+
+const names = (people: { name: string }[]) =>
+  people.length <= 3 ? people.map((x) => x.name).join(', ') : `${people.slice(0, 3).map((x) => x.name).join(', ')} +${people.length - 3}`;
+
+/** Qui vient, et qui fournit quoi. Fournir du matériel n'oblige pas à venir. */
+function pledgeSection(p: Point) {
+  const me = store.me.id;
+  const going = p.participants.some((x) => x.id === me);
+  return h('div', { class: 'card-section pledges' },
+    h('div', { class: 'pledge-head' },
+      h('div', null,
+        h('div', { class: 'section-title' }, icon('users', 18), `Qui vient ? (${p.participants.length})`),
+        h('span', { class: 'field-hint' }, p.participants.length ? names(p.participants) : 'Personne pour l\'instant')),
+      h('button', { class: `btn btn-small ${going ? 'btn-done' : 'btn-primary'}`, type: 'button',
+        onclick: () => act(() => api.participate(p.id, !going), going ? 'Tu ne participes plus' : 'Noté : tu participes') },
+        going ? icon('check', 15) : null, going ? 'Je participe' : 'Je participe ?'),
+    ),
+    p.material.length ? h('div', { class: 'material' },
+      h('div', { class: 'section-title' }, icon('package', 18), 'Matériel'),
+      h('ul', { class: 'material-rows' }, p.material.map((m) => {
+        const who = p.providers[m] ?? [];
+        const mine = who.some((x) => x.id === me);
+        return h('li', { class: `material-row${who.length ? '' : ' missing'}` },
+          h('span', { class: 'material-main' }, h('strong', null, m),
+            h('span', null, who.length ? `Fourni par ${names(who)}` : 'Personne ne le fournit')),
+          h('button', { class: `btn btn-small ${mine ? 'btn-done' : 'btn-light'}`, type: 'button',
+            onclick: () => act(() => api.provide(p.id, m, !mine), mine ? `Tu ne fournis plus : ${m}` : `Noté : tu fournis ${m}`) },
+            mine ? icon('check', 15) : null, 'Je fournis'));
+      })),
+      h('span', { class: 'field-hint' }, 'Fournir du matériel n\'oblige pas à venir.'),
+    ) : null,
+  );
 }
 
 export function directionsUrl(p: { lat: number; lng: number }) {
@@ -217,8 +250,9 @@ export function openDetail(p: Point) {
     statusRow,
     blocusSection,
     p.description ? h('p', { class: 'detail-desc' }, p.description) : null,
-    // Sur un blocus (le RDV), un problème ne dit pas où aller : on le signale sur le blocage concerné.
-    meta.alert || p.type === 'blocus' ? null : h('button', { class: 'btn btn-outline-danger btn-block', type: 'button', onclick: () => { sheet.close(); openProblemForm(p); } },
+    p.mode === 'event' && !meta.alert ? pledgeSection(p) : null,
+    // Un problème n'a de sens que sur un lieu tenu (blocage) : ailleurs, il ne dit pas où aller.
+    !canReportProblem(p.type) ? null : h('button', { class: 'btn btn-outline-danger btn-block', type: 'button', onclick: () => { sheet.close(); openProblemForm(p); } },
       icon('circle-alert', 18), 'Signaler un problème ici'),
     actions,
     h('p', { class: 'detail-meta' }, `Ajouté par ${p.creatorName ?? 'un appareil retiré'} · ${relative(p.createdAt)}`),
