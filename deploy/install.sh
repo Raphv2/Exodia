@@ -7,7 +7,7 @@
 set -euo pipefail
 
 DOMAIN="${1:-}"
-REPO="${REPO:-https://github.com/Raphv2/lfiMap.git}"
+GITHUB_REPO="${GITHUB_REPO:-Raphv2/lfiMap}"
 APP_DIR=/opt/terrain
 DATA_DIR=/var/lib/terrain
 BACKUP_DIR=/var/backups/terrain
@@ -15,6 +15,8 @@ APP_USER=terrain
 
 say() { printf '\n\033[1;35m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31mErreur : %s\033[0m\n' "$*" >&2; exit 1; }
+# Exécute une commande en tant qu'utilisateur de l'app (sa clé SSH est dans $DATA_DIR/.ssh).
+as_app() { runuser -u "$APP_USER" -- env HOME="$DATA_DIR" "$@"; }
 
 [ -n "$DOMAIN" ] || die "indique le domaine. Exemple : bash install.sh carte.raphaelgosset.fr"
 [ "$(id -u)" -eq 0 ] || die "lance ce script en root (ou avec sudo)."
@@ -66,14 +68,38 @@ install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$DATA_DIR" "$BACKUP_DIR"
 
 say "Code de l'application"
 if [ -d "$APP_DIR/.git" ]; then
-  runuser -u "$APP_USER" -- git -C "$APP_DIR" pull --ff-only
+  as_app git -C "$APP_DIR" pull --ff-only
 else
-  git clone --quiet "$REPO" "$APP_DIR"
-  chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+  if GIT_TERMINAL_PROMPT=0 git ls-remote "https://github.com/$GITHUB_REPO.git" >/dev/null 2>&1; then
+    REPO_URL="https://github.com/$GITHUB_REPO.git"   # dépôt public
+  else
+    # Dépôt privé : clé de déploiement en lecture seule, propre à ce serveur.
+    REPO_URL="git@github.com:$GITHUB_REPO.git"
+    KEY="$DATA_DIR/.ssh/id_ed25519"
+    if [ ! -f "$KEY" ]; then
+      install -d -o "$APP_USER" -g "$APP_USER" -m 0700 "$DATA_DIR/.ssh"
+      as_app ssh-keygen -q -t ed25519 -N '' -C "terrain@$DOMAIN" -f "$KEY"
+    fi
+    as_app bash -c "ssh-keyscan -t ed25519 github.com 2>/dev/null >> '$DATA_DIR/.ssh/known_hosts'; sort -u -o '$DATA_DIR/.ssh/known_hosts' '$DATA_DIR/.ssh/known_hosts'"
+    until as_app git ls-remote "$REPO_URL" >/dev/null 2>&1; do
+      echo
+      echo "  Le dépôt $GITHUB_REPO est privé. Autorise ce serveur à le lire :"
+      echo "    1. Ouvre https://github.com/$GITHUB_REPO/settings/keys/new"
+      echo "    2. Title : serveur $DOMAIN"
+      echo "    3. Key : colle la ligne ci-dessous (NE coche PAS « Allow write access »)"
+      echo
+      echo "  $(cat "$KEY.pub")"
+      echo
+      read -r -p "  Appuie sur Entrée une fois la clé ajoutée… " _
+    done
+    echo "  Accès au dépôt : OK"
+  fi
+  install -d -o "$APP_USER" -g "$APP_USER" -m 0755 "$APP_DIR"
+  as_app git clone --quiet "$REPO_URL" "$APP_DIR"
 fi
 
 say "Dépendances et compilation de l'interface"
-runuser -u "$APP_USER" -- env HOME="$DATA_DIR" npm_config_cache=/tmp/terrain-npm \
+as_app npm_config_cache=/tmp/terrain-npm \
   bash -c "cd '$APP_DIR' && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent"
 
 say "Services (démarrage automatique, sauvegarde quotidienne)"

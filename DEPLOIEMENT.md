@@ -45,21 +45,30 @@ L'adresse affichée doit être celle de ton VPS.
 
 ## 3. Installer l'app
 
-Connecte-toi au serveur depuis PowerShell :
+Ton dépôt GitHub est **privé** : le serveur ne peut pas télécharger le script tout seul. On l'envoie depuis ton PC. Dans PowerShell :
+```powershell
+scp C:\Users\rgosset\Documents\dev\terrain\deploy\install.sh root@203.0.113.42:
+```
+
+Connecte-toi au serveur :
 ```powershell
 ssh root@203.0.113.42
 ```
 
-Puis, **sur le serveur**, télécharge le script d'installation depuis ton dépôt. Tu peux le lire avant de le lancer :
-```bash
-curl -fsSL https://raw.githubusercontent.com/Raphv2/lfiMap/main/deploy/install.sh -o install.sh
-less install.sh
-```
-
-Lance-le :
+Puis, **sur le serveur** :
 ```bash
 bash install.sh carte.raphaelgosset.fr
 ```
+
+**Autoriser le serveur à lire le dépôt privé.** Au premier lancement, le script crée une *clé de déploiement* propre à ce serveur et l'affiche (une ligne qui commence par `ssh-ed25519`). Puis il attend :
+
+1. Ouvre la page indiquée, `https://github.com/Raphv2/lfiMap/settings/keys/new` (dépôt → Settings → Deploy keys → Add deploy key).
+2. **Title** : `serveur carte.raphaelgosset.fr`.
+3. **Key** : colle la ligne affichée.
+4. **Ne coche pas** « Allow write access » : le serveur peut seulement lire ce dépôt, rien d'autre sur ton compte.
+5. Clique sur **Add key**, puis appuie sur Entrée dans le terminal.
+
+Si un jour tu retires cette clé sur GitHub, le serveur ne pourra plus récupérer de mises à jour, mais l'app continuera de tourner.
 
 Le script :
 - installe Node.js 22, Caddy (serveur web avec HTTPS automatique) et le pare-feu ;

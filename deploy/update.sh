@@ -11,7 +11,7 @@ echo "==> Sauvegarde avant mise à jour"
 systemctl start terrain-backup.service
 
 echo "==> Récupération du code"
-runuser -u "$APP_USER" -- git -C "$APP_DIR" pull --ff-only
+runuser -u "$APP_USER" -- env HOME=/var/lib/terrain git -C "$APP_DIR" pull --ff-only
 
 echo "==> Dépendances et compilation"
 runuser -u "$APP_USER" -- env HOME=/var/lib/terrain npm_config_cache=/tmp/terrain-npm \
