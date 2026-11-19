@@ -45,6 +45,11 @@ export const api = {
   setStatus: (id: string, status: Point['status']) => req<{ point: Point }>('PATCH', `/points/${id}/status`, { status }),
   extend: (id: string, minutes: number) => req<{ point: Point }>('POST', `/points/${id}/extend`, { minutes }),
   deletePoint: (id: string) => req('DELETE', `/points/${id}`),
+  finish: (id: string) => req<{ point: Point }>('POST', `/points/${id}/finish`, {}),
+  reportProblem: (id: string, message: string, durationMinutes: number) =>
+    req<{ point: Point }>('POST', `/points/${id}/problems`, { message, durationMinutes }),
+  resolveProblem: (problemId: string) => req<{ point: Point }>('POST', `/problems/${problemId}/resolve`, {}),
+  extendProblem: (problemId: string, minutes: number) => req<{ point: Point }>('POST', `/problems/${problemId}/extend`, { minutes }),
   uploadPhoto: (blob: Blob) => req<{ photo: string }>('POST', '/photos', undefined, blob),
 
   createInvite: (o: { role: Role; ttlMinutes: number; maxUses: number; label?: string | null }) => req<CreatedInvite>('POST', '/invites', o),

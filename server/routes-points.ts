@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db, UPLOAD_DIR } from './db';
 import { newId, type DeviceRow } from './auth';
 import { broadcast } from './events';
-import { TYPES, TYPE_KEYS, type Point, type PointInput } from '../shared/model';
+import { TYPES, TYPE_KEYS, type Point, type PointInput, type Problem } from '../shared/model';
 
 export const points = Router();
 
@@ -19,16 +19,48 @@ interface PointRow {
   creator_name?: string | null;
 }
 
-const toDto = (r: PointRow): Point => ({
+const toDto = (r: PointRow, problems: Problem[] = []): Point => ({
   id: r.id, mode: r.mode, type: r.type, title: r.title, description: r.description,
   lat: r.lat, lng: r.lng, color: r.color, photo: r.photo,
   startsAt: r.starts_at, endsAt: r.ends_at, recurrence: r.recurrence, recurrenceUntil: r.recurrence_until,
   expiresAt: r.expires_at, status: r.status, createdBy: r.created_by, creatorName: r.creator_name ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at,
+  problems,
 });
 
 const SELECT = 'SELECT p.*, d.name AS creator_name FROM points p LEFT JOIN devices d ON d.id = p.created_by';
 const getPoint = (id: string) => db.prepare(`${SELECT} WHERE p.id = ?`).get(id) as PointRow | undefined;
+
+// ---------- Problèmes signalés sur un point ----------
+
+interface ProblemRow {
+  id: string; point_id: string; message: string; created_by: string; created_at: number; expires_at: number;
+  creator_name: string | null;
+}
+const problemDto = (r: ProblemRow): Problem => ({
+  id: r.id, pointId: r.point_id, message: r.message, createdBy: r.created_by, creatorName: r.creator_name,
+  createdAt: r.created_at, expiresAt: r.expires_at,
+});
+const PROBLEM_SELECT = `SELECT pr.*, d.name AS creator_name FROM problems pr LEFT JOIN devices d ON d.id = pr.created_by
+  WHERE pr.resolved_at IS NULL AND pr.expires_at > ?`;
+
+function activeProblems(pointId?: string): Map<string, Problem[]> {
+  const rows = (pointId
+    ? db.prepare(`${PROBLEM_SELECT} AND pr.point_id = ? ORDER BY pr.created_at`).all(Date.now(), pointId)
+    : db.prepare(`${PROBLEM_SELECT} ORDER BY pr.created_at`).all(Date.now())) as unknown as ProblemRow[];
+  const map = new Map<string, Problem[]>();
+  for (const r of rows) {
+    if (!map.has(r.point_id)) map.set(r.point_id, []);
+    map.get(r.point_id)!.push(problemDto(r));
+  }
+  return map;
+}
+
+/** Un point complet (avec ses problèmes en cours), prêt à renvoyer. */
+function pointDto(id: string): Point | null {
+  const row = getPoint(id);
+  return row ? toDto(row, activeProblems(id).get(id) ?? []) : null;
+}
 
 const inputSchema = z.object({
   mode: z.enum(['fixe', 'event']),
@@ -93,7 +125,8 @@ const canEdit = (me: DeviceRow, row: PointRow) => me.role === 'admin' || row.cre
 
 points.get('/points', (_req, res) => {
   const rows = db.prepare(`${SELECT} ORDER BY p.created_at`).all() as unknown as PointRow[];
-  res.json({ points: rows.map(toDto) });
+  const problems = activeProblems();
+  res.json({ points: rows.map((r) => toDto(r, problems.get(r.id) ?? [])) });
 });
 
 points.post('/points', (req, res) => {
@@ -109,7 +142,7 @@ points.post('/points', (req, res) => {
     .run(id, n.mode, n.type, n.title, n.description, n.lat, n.lng, n.color, n.photo, n.starts_at, n.ends_at,
       n.recurrence, n.recurrence_until, n.expires_at, n.status, req.device!.id, now, now);
   broadcast('points', { id, by: req.device!.id, action: 'create', type: n.type });
-  res.status(201).json({ point: toDto(getPoint(id)!) });
+  res.status(201).json({ point: pointDto(id)! });
 });
 
 points.put('/points/:id', (req, res) => {
@@ -126,7 +159,7 @@ points.put('/points/:id', (req, res) => {
       n.recurrence, n.recurrence_until, n.expires_at, n.status, Date.now(), row.id);
   if (row.photo && row.photo !== n.photo) removePhoto(row.photo);
   broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
-  res.json({ point: toDto(getPoint(row.id)!) });
+  res.json({ point: pointDto(row.id)! });
 });
 
 /** Statut d'un panneau : tout le monde peut le mettre à jour sur le terrain. */
@@ -136,7 +169,7 @@ points.patch('/points/:id/status', (req, res) => {
   const r = db.prepare("UPDATE points SET status = ?, updated_at = ? WHERE id = ? AND type = 'panneau'").run(status.data, Date.now(), req.params.id);
   if (!r.changes) return res.status(404).json({ error: 'Panneau introuvable' });
   broadcast('points', { id: req.params.id, by: req.device!.id, action: 'update' });
-  res.json({ point: toDto(getPoint(req.params.id)!) });
+  res.json({ point: pointDto(req.params.id)! });
 });
 
 /** Prolonger une alerte : tout le monde peut confirmer qu'elle est toujours d'actualité. */
@@ -148,7 +181,63 @@ points.post('/points/:id/extend', (req, res) => {
   const exp = Math.max(row.expires_at ?? 0, Date.now()) + minutes.data * 60_000;
   db.prepare('UPDATE points SET expires_at = ?, ends_at = ?, updated_at = ? WHERE id = ?').run(exp, exp, Date.now(), row.id);
   broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
-  res.json({ point: toDto(getPoint(row.id)!) });
+  res.json({ point: pointDto(row.id)! });
+});
+
+/** Terminer un événement maintenant (auteur·rice ou admin) : il quitte la carte mais reste dans l'agenda. */
+points.post('/points/:id/finish', (req, res) => {
+  const row = getPoint(req.params.id);
+  if (!row || row.mode !== 'event' || TYPES[row.type].alert) return res.status(404).json({ error: 'Événement introuvable' });
+  if (!canEdit(req.device!, row)) return res.status(403).json({ error: 'Seul·e l\'auteur·rice ou un admin peut terminer cet événement.' });
+  const now = Date.now();
+  if (row.recurrence !== 'none') {
+    // Événement répété : on arrête la répétition après l'occurrence en cours.
+    db.prepare('UPDATE points SET recurrence_until = ?, expires_at = ?, updated_at = ? WHERE id = ?').run(now, now, now, row.id);
+  } else {
+    const start = Math.min(row.starts_at ?? now, now - 60_000);
+    db.prepare('UPDATE points SET starts_at = ?, ends_at = ?, expires_at = ?, updated_at = ? WHERE id = ?').run(start, now, now, now, row.id);
+  }
+  db.prepare('UPDATE problems SET resolved_at = ?, resolved_by = ? WHERE point_id = ? AND resolved_at IS NULL').run(now, req.device!.id, row.id);
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  res.json({ point: pointDto(row.id)! });
+});
+
+/** Signaler un problème sur un point : tout le monde peut le faire. */
+points.post('/points/:id/problems', (req, res) => {
+  const body = z.object({
+    message: z.string().trim().min(1, 'Décris le problème').max(200),
+    durationMinutes: z.number().int().min(5).max(24 * 60),
+  }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: body.error.issues[0]?.message ?? 'Données invalides' });
+  const row = getPoint(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Point introuvable' });
+  if (TYPES[row.type].alert) return res.status(400).json({ error: 'C\'est déjà une alerte : prolonge-la plutôt.' });
+  const now = Date.now();
+  db.prepare('INSERT INTO problems (id, point_id, message, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(newId(), row.id, body.data.message, req.device!.id, now, now + body.data.durationMinutes * 60_000);
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'problem', title: row.title });
+  res.status(201).json({ point: pointDto(row.id)! });
+});
+
+/** Problème réglé : tout le monde peut le lever. */
+points.post('/problems/:id/resolve', (req, res) => {
+  const pr = db.prepare('SELECT point_id FROM problems WHERE id = ? AND resolved_at IS NULL').get(req.params.id) as { point_id: string } | undefined;
+  if (!pr) return res.status(404).json({ error: 'Problème introuvable ou déjà réglé' });
+  db.prepare('UPDATE problems SET resolved_at = ?, resolved_by = ? WHERE id = ?').run(Date.now(), req.device!.id, req.params.id);
+  broadcast('points', { id: pr.point_id, by: req.device!.id, action: 'update' });
+  res.json({ point: pointDto(pr.point_id)! });
+});
+
+/** Problème toujours d'actualité : on prolonge. */
+points.post('/problems/:id/extend', (req, res) => {
+  const minutes = z.number().int().min(5).max(240).safeParse(req.body?.minutes);
+  if (!minutes.success) return res.status(400).json({ error: 'Durée invalide' });
+  const pr = db.prepare('SELECT point_id, expires_at FROM problems WHERE id = ? AND resolved_at IS NULL').get(req.params.id) as { point_id: string; expires_at: number } | undefined;
+  if (!pr) return res.status(404).json({ error: 'Problème introuvable ou déjà réglé' });
+  const exp = Math.max(pr.expires_at, Date.now()) + minutes.data * 60_000;
+  db.prepare('UPDATE problems SET expires_at = ? WHERE id = ?').run(exp, req.params.id);
+  broadcast('points', { id: pr.point_id, by: req.device!.id, action: 'update' });
+  res.json({ point: pointDto(pr.point_id)! });
 });
 
 points.delete('/points/:id', (req, res) => {
@@ -209,6 +298,8 @@ export function cleanup() {
     const st = fs.statSync(path.join(UPLOAD_DIR, f));
     if (now - st.mtimeMs > 24 * 3600_000) removePhoto(f);
   }
+  // Problèmes réglés ou expirés depuis plus d'un jour.
+  db.prepare('DELETE FROM problems WHERE COALESCE(resolved_at, expires_at) < ?').run(now - 86400_000);
   // Invitations mortes depuis une semaine.
   db.prepare('DELETE FROM invites WHERE expires_at < ?').run(now - 7 * 86400_000);
 }

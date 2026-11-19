@@ -1,7 +1,7 @@
 import { store } from './store';
 import { TYPES, colorOf } from '../../shared/model';
-import { occurrences, type Occurrence } from '../../shared/time';
-import { h, icon, clear, time, dayLong, startOfWeek, addDays, sameDay, inkFor, startOfDay } from './ui';
+import { occurrences, liveProblems, type Occurrence } from '../../shared/time';
+import { h, icon, clear, time, dayLong, startOfWeek, addDays, sameDay, inkFor, startOfDay, isAllDay } from './ui';
 import { newPointFlow } from './forms';
 
 let weekStart = startOfWeek(Date.now());
@@ -101,11 +101,13 @@ function card(o: Occurrence) {
   },
   h('span', { class: 'ev-ico' }, icon(meta.icon, 22)),
   h('span', { class: 'ev-main' },
-    h('span', { class: 'ev-time' }, meta.alert ? `${time(o.start)} → ${time(o.end)}` : `${time(o.start)} – ${time(o.end)}`,
+    h('span', { class: 'ev-time' },
+      isAllDay(o.start, o.end) ? 'Toute la journée' : meta.alert ? `${time(o.start)} → ${time(o.end)}` : `${time(o.start)} – ${time(o.end)}`,
       live ? h('span', { class: 'ev-live' }, 'en cours') : null,
       p.recurrence !== 'none' ? icon('repeat', 14) : null),
     h('span', { class: 'ev-title' }, p.title),
     p.description ? h('span', { class: 'ev-desc' }, p.description) : h('span', { class: 'ev-desc ev-type' }, meta.label),
+    live && liveProblems(p).length ? h('span', { class: 'ev-problem' }, icon('circle-alert', 13), liveProblems(p)[0].message) : null,
   ),
   p.photo ? h('span', { class: 'ev-photo-flag', title: 'Avec photo' }, icon('camera', 16)) : null,
   );

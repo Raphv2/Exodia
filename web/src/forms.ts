@@ -4,7 +4,7 @@ import { openSheet, closeSheet } from './sheet';
 import { pickLocation, flyTo, showMe } from './map';
 import { getPosition, type Pos } from './geo';
 import {
-  h, icon, clear, toast, toDateInput, toTimeInput, fromInputs, addDays, startOfDay, inkFor,
+  h, icon, clear, toast, toDateInput, toTimeInput, fromInputs, addDays, startOfDay, inkFor, isAllDay,
 } from './ui';
 import {
   TYPES, TYPE_KEYS, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, ALERT_DURATIONS, ALERT_PRESETS,
@@ -115,10 +115,13 @@ interface Draft {
   recurrence: Recurrence;
   until: string;
   status: PanneauStatus;
+  allDay: boolean;
+  /** L'utilisateur a choisi lui-même « toute la journée » ou non. */
+  allDayTouched: boolean;
 }
 
 const FORM_TYPES = TYPE_KEYS.filter((t) => !TYPES[t].alert);
-const EVENT_ORDER: PointType[] = ['tractage', 'ag', 'collage', 'materiel', 'local', 'autre'];
+const EVENT_ORDER: PointType[] = ['rassemblement', 'blocage', 'tractage', 'ag', 'collage', 'materiel', 'local', 'autre'];
 
 function draftFrom(p: Point | null, pos: Pos, mode: Mode = 'fixe'): Draft {
   const nextHour = new Date();
@@ -126,7 +129,10 @@ function draftFrom(p: Point | null, pos: Pos, mode: Mode = 'fixe'): Draft {
   nextHour.setHours(nextHour.getHours() + 1);
   const s = p?.startsAt ?? nextHour.getTime();
   const e = p?.endsAt ?? s + 2 * 3600_000;
+  const allDay = p ? p.mode === 'event' && isAllDay(s, e) : false;
   return {
+    allDay,
+    allDayTouched: !!p,
     id: p?.id,
     mode: p?.mode ?? mode,
     type: p?.type ?? (mode === 'fixe' ? 'panneau' : 'tractage'),
@@ -137,8 +143,8 @@ function draftFrom(p: Point | null, pos: Pos, mode: Mode = 'fixe'): Draft {
     color: p?.color ?? null,
     photo: { existing: p?.photo ?? null, blob: null },
     date: toDateInput(s),
-    start: toTimeInput(s),
-    end: toTimeInput(e),
+    start: allDay ? '09:00' : toTimeInput(s),
+    end: allDay ? '18:00' : toTimeInput(e),
     recurrence: p?.recurrence ?? 'none',
     until: p?.recurrenceUntil ? toDateInput(p.recurrenceUntil) : '',
     status: p?.status ?? 'a_coller',
@@ -164,6 +170,7 @@ function openPointForm(d: Draft) {
   const render = () => {
     const typesForMode = (d.mode === 'event' ? EVENT_ORDER : FORM_TYPES).filter((t) => TYPES[t].modes.includes(d.mode));
     if (!typesForMode.includes(d.type)) d.type = typesForMode[0];
+    if (!d.allDayTouched) d.allDay = !!TYPES[d.type].allDay;
     const meta = TYPES[d.type];
     const color = d.color ?? TYPES[d.type].color;
     sheet.el.style.setProperty('--accent', color);
@@ -171,7 +178,12 @@ function openPointForm(d: Draft) {
     const typeGrid = h('div', { class: 'type-grid' }, typesForMode.map((t) => h('button', {
       type: 'button', class: `type-tile${t === d.type ? ' on' : ''}`, style: { '--c': TYPES[t].color, '--ink': TYPES[t].ink } as Record<string, string>,
       'aria-pressed': String(t === d.type),
-      onclick: () => { d.type = t; d.color = null; render(); },
+      onclick: () => {
+        d.type = t;
+        d.color = null;
+        if (!d.allDayTouched) d.allDay = !!TYPES[t].allDay;
+        render();
+      },
     }, h('span', { class: 'type-ico' }, icon(TYPES[t].icon, 22)), h('span', { class: 'type-label' }, TYPES[t].short))));
 
     const title = h('input', { class: 'input', type: 'text', maxlength: '80', value: d.title, placeholder: meta.placeholder, autocomplete: 'off', oninput: (e: Event) => (d.title = (e.target as HTMLInputElement).value) });
@@ -179,11 +191,15 @@ function openPointForm(d: Draft) {
 
     const schedule = d.mode === 'event' ? h('div', { class: 'card-section' },
       h('div', { class: 'section-title' }, icon('clock', 18), 'Quand ?'),
-      h('div', { class: 'grid-3' },
+      h('label', { class: 'toggle-line' },
+        h('input', { type: 'checkbox', checked: d.allDay, onchange: (e: Event) => { d.allDay = (e.target as HTMLInputElement).checked; d.allDayTouched = true; render(); } }),
+        h('span', { class: 'switch' }), 'Toute la journée'),
+      h('div', { class: d.allDay ? 'grid-1' : 'grid-3' },
         field('Date', h('input', { class: 'input', type: 'date', value: d.date, required: true, onchange: (e: Event) => (d.date = (e.target as HTMLInputElement).value) })),
-        field('Début', h('input', { class: 'input', type: 'time', value: d.start, step: '300', onchange: (e: Event) => (d.start = (e.target as HTMLInputElement).value) })),
-        field('Fin', h('input', { class: 'input', type: 'time', value: d.end, step: '300', onchange: (e: Event) => (d.end = (e.target as HTMLInputElement).value) })),
+        d.allDay ? null : field('Début', h('input', { class: 'input', type: 'time', value: d.start, step: '300', onchange: (e: Event) => (d.start = (e.target as HTMLInputElement).value) })),
+        d.allDay ? null : field('Fin', h('input', { class: 'input', type: 'time', value: d.end, step: '300', onchange: (e: Event) => (d.end = (e.target as HTMLInputElement).value) })),
       ),
+      d.allDay ? h('p', { class: 'field-hint' }, 'Visible sur la carte jusqu\'à minuit, puis le point disparaît tout seul.') : null,
       group('Répéter', chips((Object.keys(RECURRENCE_LABEL) as Recurrence[]).map((r) => ({ value: r, label: RECURRENCE_LABEL[r] })), d.recurrence, (v) => { d.recurrence = v; render(); }, color)),
       d.recurrence !== 'none'
         ? field('Jusqu\'au', h('input', { class: 'input', type: 'date', value: d.until, min: d.date, onchange: (e: Event) => (d.until = (e.target as HTMLInputElement).value) }), 'Laisse vide pour répéter sans fin.', true)
@@ -230,10 +246,16 @@ function openPointForm(d: Draft) {
       lat: d.lat, lng: d.lng, color: d.color, status: d.type === 'panneau' ? d.status : null,
     };
     if (d.mode === 'event') {
-      if (!d.date || !d.start || !d.end) return toast('Indique la date, l\'heure de début et de fin.', 'err');
-      const s = fromInputs(d.date, d.start);
-      let e = fromInputs(d.date, d.end);
-      if (e <= s) e = addDays(e, 1); // fin après minuit
+      if (!d.date || (!d.allDay && (!d.start || !d.end))) return toast('Indique la date, l\'heure de début et de fin.', 'err');
+      let s: number, e: number;
+      if (d.allDay) {
+        s = startOfDay(fromInputs(d.date, '00:00'));
+        e = addDays(s, 1) - 1; // 23:59:59
+      } else {
+        s = fromInputs(d.date, d.start);
+        e = fromInputs(d.date, d.end);
+        if (e <= s) e = addDays(e, 1); // fin après minuit
+      }
       input.startsAt = s;
       input.endsAt = e;
       input.recurrence = d.recurrence;

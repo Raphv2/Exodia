@@ -680,3 +680,38 @@ details.more[open] summary::before { content: '– '; }
   .pick-list { max-height: 360px; }
   .toasts { top: auto; bottom: 24px; }
 }
+.grid-1 { display: grid; grid-template-columns: 1fr; gap: 10px; }
+
+/* ---------- Problème signalé sur un point ---------- */
+
+/* L'épingle clignote en rouge, comme une alerte Danger. */
+.pin-problem .pin-head::after {
+  content: ''; position: absolute; inset: -8px; border-radius: 50%;
+  border: 3px solid var(--red); animation: pulse 1.1s ease-out infinite;
+}
+.pin-problem .pin-head { animation: problem-blink 1.1s ease-in-out infinite; }
+.pin-problem .pin-badge { background: var(--red); color: #fff; }
+@keyframes problem-blink {
+  0%, 100% { box-shadow: 0 0 0 3px var(--red), -2px 3px 7px rgba(0,0,0,0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(245,59,59,0.35), -2px 3px 7px rgba(0,0,0,0.35); }
+}
+
+.problem-card {
+  display: flex; flex-direction: column; gap: 6px; padding: 12px 14px;
+  background: #fff0f0; border: 2px solid var(--red); border-radius: var(--r-lg);
+}
+.problem-head { display: flex; align-items: center; gap: 8px; color: #b3141b; }
+.problem-head strong { font-family: var(--font-title); font-weight: 800; font-size: 21px; text-transform: uppercase; line-height: 1.05; }
+.problem-meta { font-size: 13px; color: var(--ink-soft); }
+.problem-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+
+.btn-outline-danger { background: #fff; color: #c41d1d; border-color: var(--red); }
+.btn-outline-danger:hover { background: #fff0f0; }
+
+.ev-problem {
+  display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-top: 4px;
+  background: #fff; color: #b3141b; padding: 2px 8px; border-radius: 999px;
+  font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
+  animation: problem-chip 1.1s ease-in-out infinite;
+}
+@keyframes problem-chip { 50% { background: #ffd6d6; } }

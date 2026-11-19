@@ -2,9 +2,11 @@
 
 Web app responsive (PC et mobile, installable sur l'écran d'accueil) pour organiser le terrain :
 
-- **Carte** : points fixes (panneaux électoraux, local, matériel, point de collage…) et événements (AG, tractage, collage, matériel, local, autre), chacun avec une couleur, une icône, une photo et une description facultatives.
+- **Carte** : points fixes (panneaux électoraux, local, matériel, point de collage…) et événements (rassemblement, blocage, tractage, AG, collage, matériel, local, autre), chacun avec une couleur, une icône, une photo et une description facultatives.
+- **Événements** : avec un horaire, par exemple « 5 h 30, quai 43 », ou sur **toute la journée** (proposé par défaut pour un blocage). Ils disparaissent de la carte tout seuls à la fin. L'auteur·rice ou un admin peut les **terminer** plus tôt : ils restent alors dans l'agenda.
 - **Warning / Danger** : deux boutons dédiés sur la carte pour signaler un problème en deux gestes. L'alerte reste visible 15 min, 30 min, 1 h ou 2 h, puis disparaît toute seule. N'importe qui peut la prolonger (« Toujours là »).
-- **Agenda** : les événements de la semaine (sans les points fixes), sur la couleur de leur type, avec l'icône, l'horaire et un aperçu de la description. Gère la récurrence (chaque jour, semaine, mois).
+- **Problème sur un point** : sur un blocage, un panneau, un rassemblement…, n'importe qui peut **signaler un problème** (barricade enlevée, des gens dans le bâtiment, manque de monde…) sans créer d'alerte séparée. L'épingle **clignote en rouge** chez tout le monde jusqu'à ce que quelqu'un le marque comme réglé, ou que le délai choisi expire.
+- **Agenda** : les événements de la semaine (sans les points fixes), sur la couleur de leur type, avec l'icône, l'horaire et un aperçu de la description. Gère la récurrence (chaque jour, semaine, mois) et signale les problèmes en cours.
 - **Trajet de collage** : sélection des panneaux et points de collage, calcul de l'ordre le plus court, puis export vers **Google Maps** (découpé automatiquement en parties de 9 étapes), **GPX** (Organic Maps, OsmAnd, Komoot…), **Waze** (prochain arrêt) ou partage par message.
 - **Équipe** : invitations par QR code, rôles, révocation des appareils.
 - **Temps réel** : quand quelqu'un ajoute un point ou une alerte, la carte se met à jour partout, avec une notification pour les alertes.

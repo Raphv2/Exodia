@@ -3,7 +3,7 @@ import {
   Crosshair, Download, Footprints, House, ImagePlus, Layers, LocateFixed, LogOut, Map as MapIcon, MapPin,
   Navigation, Newspaper, Package, PaintRoller, Pencil, Plus, Presentation, QrCode, Repeat, Route, Share2,
   ShieldCheck, Siren, Smartphone, Trash2, TriangleAlert, UserPlus, Users, UsersRound, X, ArrowRight, Timer,
-  CircleCheck, ListChecks, type IconNode,
+  CircleCheck, ListChecks, Construction, Megaphone, CircleAlert, Flag, Sun, type IconNode,
 } from 'lucide';
 
 const ICONS: Record<string, IconNode> = {
@@ -16,6 +16,7 @@ const ICONS: Record<string, IconNode> = {
   'shield-check': ShieldCheck, siren: Siren, smartphone: Smartphone, 'trash-2': Trash2,
   'triangle-alert': TriangleAlert, 'user-plus': UserPlus, users: Users, 'users-round': UsersRound, x: X,
   'arrow-right': ArrowRight, timer: Timer, 'circle-check': CircleCheck, 'list-checks': ListChecks,
+  construction: Construction, megaphone: Megaphone, 'circle-alert': CircleAlert, flag: Flag, sun: Sun,
 };
 
 export function icon(name: string, size = 20, stroke = 2.25): SVGElement {
@@ -128,7 +129,14 @@ export function relative(t: number, now = Date.now()) {
   return diff >= 0 ? `dans ${label}` : `il y a ${label}`;
 }
 
+/** Toute la journée = de 00:00 à 23:59 le même jour. */
+export function isAllDay(start: number, end: number) {
+  const s = new Date(start), e = new Date(end);
+  return sameDay(start, end) && s.getHours() === 0 && s.getMinutes() === 0 && e.getHours() === 23 && e.getMinutes() === 59;
+}
+
 export function rangeLabel(start: number, end: number) {
+  if (isAllDay(start, end)) return `${dayLong(start)} · toute la journée`;
   if (sameDay(start, end)) return `${dayLong(start)} · ${time(start)} – ${time(end)}`;
   return `${dayShort(start)} ${time(start)} → ${dayShort(end)} ${time(end)}`;
 }

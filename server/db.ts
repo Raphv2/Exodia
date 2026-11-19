@@ -60,4 +60,17 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS points_expires ON points(expires_at);
+
+  CREATE TABLE IF NOT EXISTS problems (
+    id           TEXT PRIMARY KEY,
+    point_id     TEXT NOT NULL REFERENCES points(id) ON DELETE CASCADE,
+    message      TEXT NOT NULL,
+    created_by   TEXT NOT NULL,
+    created_at   INTEGER NOT NULL,
+    expires_at   INTEGER NOT NULL,
+    resolved_at  INTEGER,
+    resolved_by  TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS problems_point ON problems(point_id);
 `);

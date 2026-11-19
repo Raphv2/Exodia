@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import { store, type Group } from './store';
 import { TYPES, colorOf, type Point } from '../../shared/model';
-import { isActive, occurrences } from '../../shared/time';
+import { isActive, occurrences, liveProblems } from '../../shared/time';
 import { h, icon, iconHtml, inkFor, startOfDay, addDays, toast } from './ui';
 import { getPosition, type Pos } from './geo';
 
@@ -19,6 +19,8 @@ export function visiblePoints(now = Date.now()): Point[] {
   const dayEnd = addDays(dayStart, 1) - 1;
   return store.points.filter((p) => {
     if (!isActive(p, now)) return false;
+    // Un point avec un problème en cours reste toujours visible, quels que soient les filtres.
+    if (liveProblems(p, now).length) return true;
     const g = groupOf(p);
     if (!store.filters[g]) return false;
     if (store.todayOnly && g === 'event' && occurrences(p, dayStart, dayEnd).length === 0) return false;
@@ -88,12 +90,13 @@ export function renderMarkers() {
   const order = store.routeOrder;
   for (const p of visiblePoints()) {
     const routable = !!TYPES[p.type].routable;
-    let cls = '';
-    let badge: string | null = null;
+    const problems = liveProblems(p);
+    let cls = problems.length ? 'pin-problem' : '';
+    let badge: string | null = problems.length ? '!' : null;
     if (routeMode) {
-      if (!routable) cls = 'pin-dim';
+      if (!routable && !problems.length) cls = 'pin-dim';
       else if (store.routeSelection.has(p.id)) {
-        cls = 'pin-selected';
+        cls += ' pin-selected';
         const i = order.indexOf(p.id);
         badge = i >= 0 ? String(i + 1) : '✓';
       }
@@ -101,11 +104,11 @@ export function renderMarkers() {
     const m = L.marker([p.lat, p.lng], {
       icon: markerIcon(p, { cls, badge }),
       riseOnHover: true,
-      zIndexOffset: TYPES[p.type].alert ? 1000 : cls === 'pin-selected' ? 500 : 0,
+      zIndexOffset: TYPES[p.type].alert || problems.length ? 1000 : cls.includes('pin-selected') ? 500 : 0,
       keyboard: true,
       title: p.title,
     });
-    m.bindTooltip(h('span', null, p.title), { direction: 'top', className: 'pin-tip' });
+    m.bindTooltip(h('span', null, problems.length ? `⚠ ${problems[0].message} · ${p.title}` : p.title), { direction: 'top', className: 'pin-tip' });
     m.on('click', () => onPick(p));
     markers.addLayer(m);
   }

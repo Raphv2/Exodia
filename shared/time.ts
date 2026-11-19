@@ -38,6 +38,9 @@ export function nextOccurrence(p: Point, now = Date.now()): Occurrence | null {
   return occurrences(p, now, now + 400 * 86400000)[0] ?? null;
 }
 
+/** Problèmes encore en cours sur un point (non réglés et non expirés). */
+export const liveProblems = (p: Point, now = Date.now()) => (p.problems ?? []).filter((x) => x.expiresAt > now);
+
 /** Le point doit-il encore apparaître sur la carte ? */
 export function isActive(p: Point, now = Date.now()): boolean {
   if (p.mode === 'fixe') return true;

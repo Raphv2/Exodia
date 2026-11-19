@@ -6,7 +6,7 @@ export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 export type PanneauStatus = 'a_coller' | 'colle' | 'abime';
 
 export const TYPE_KEYS = [
-  'panneau', 'collage', 'ag', 'tractage', 'materiel', 'local', 'autre', 'warning', 'danger',
+  'panneau', 'collage', 'ag', 'tractage', 'rassemblement', 'blocage', 'materiel', 'local', 'autre', 'warning', 'danger',
 ] as const;
 export type PointType = (typeof TYPE_KEYS)[number];
 
@@ -21,6 +21,8 @@ export interface TypeMeta {
   alert?: boolean;
   /** Peut faire partie d'un trajet de collage. */
   routable?: boolean;
+  /** Proposé « toute la journée » par défaut. */
+  allDay?: boolean;
   placeholder: string;
 }
 
@@ -29,7 +31,9 @@ export const TYPES: Record<PointType, TypeMeta> = {
   collage:  { label: 'Point de collage', short: 'Collage', color: '#00A86B', ink: '#fff', icon: 'paint-roller', modes: ['fixe', 'event'], routable: true, placeholder: 'Collage quartier gare' },
   ag:       { label: 'Assemblée générale', short: 'AG', color: '#E5007D', ink: '#fff', icon: 'users', modes: ['event'], placeholder: 'AG du groupe d\'action' },
   tractage: { label: 'Tractage', short: 'Tractage', color: '#FF7A00', ink: '#fff', icon: 'newspaper', modes: ['event'], placeholder: 'Tractage marché du dimanche' },
-  materiel: { label: 'Matériel', short: 'Matériel', color: '#0098B6', ink: '#fff', icon: 'package', modes: ['fixe', 'event'], placeholder: 'Récupération des affiches' },
+  rassemblement: { label: 'Rassemblement', short: 'Rassemblement', color: '#1F4FD1', ink: '#fff', icon: 'megaphone', modes: ['event'], placeholder: 'Rassemblement devant la mairie' },
+  blocage:  { label: 'Blocage', short: 'Blocage', color: '#8B1E3F', ink: '#fff', icon: 'construction', modes: ['event'], allDay: true, placeholder: 'Blocage rond-point nord' },
+  materiel: { label: 'Matériel', short: 'Matériel', color: '#0098B6', ink: '#fff', icon: 'package', modes: ['fixe', 'event'], placeholder: 'Matos : colle, tracts, poubelles…' },
   local:    { label: 'Local', short: 'Local', color: '#00232C', ink: '#fff', icon: 'house', modes: ['fixe', 'event'], placeholder: 'Local du groupe' },
   autre:    { label: 'Autre', short: 'Autre', color: '#5B6770', ink: '#fff', icon: 'map-pin', modes: ['fixe', 'event'], placeholder: 'Titre du point' },
   warning:  { label: 'Warning', short: 'Warning', color: '#FFC400', ink: '#00232C', icon: 'triangle-alert', modes: ['event'], alert: true, placeholder: 'Attention' },
@@ -42,6 +46,20 @@ export const ALERT_PRESETS: Record<'warning' | 'danger', string[]> = {
   warning: ['Affiches arrachées', 'Panneau recouvert', 'Zone tendue', 'Passage difficile'],
   danger: ['Agression', 'Groupe hostile', 'Personne blessée', 'Zone à éviter'],
 };
+
+/** Problème signalé sur un point existant (sans créer d'alerte séparée). */
+export const PROBLEM_DURATIONS = [30, 60, 120, 240] as const;
+export const PROBLEM_PRESETS = ['Barricade enlevée', 'Des gens dans le bâtiment', 'Manque de monde', 'Besoin de matériel'];
+
+export interface Problem {
+  id: string;
+  pointId: string;
+  message: string;
+  createdBy: string;
+  creatorName: string | null;
+  createdAt: number;
+  expiresAt: number;
+}
 
 export const STATUS_LABEL: Record<PanneauStatus, string> = {
   a_coller: 'À coller',
@@ -86,6 +104,8 @@ export interface Point {
   creatorName: string | null;
   createdAt: number;
   updatedAt: number;
+  /** Problèmes en cours (non réglés, non expirés). */
+  problems: Problem[];
 }
 
 /** Données envoyées pour créer / modifier un point. */
