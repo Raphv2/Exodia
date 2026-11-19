@@ -2,10 +2,12 @@ import { store, paintOf } from './store';
 import { TYPES, iconOf } from '../../shared/model';
 import { occurrences, liveProblems, type Occurrence } from '../../shared/time';
 import { h, icon, clear, time, dayLong, startOfWeek, addDays, sameDay, startOfDay, isAllDay } from './ui';
-import { newPointFlow } from './forms';
+import { newPointFlow, chips } from './forms';
 
 let weekStart = startOfWeek(Date.now());
 let showAlerts = true;
+/** Filtre : tout, seulement les événements prévus, ou seulement les flashs. */
+let kind: 'all' | 'events' | 'flash' = 'all';
 let root: HTMLElement;
 let onOpen: (o: Occurrence) => void;
 
@@ -26,7 +28,9 @@ function weekOccurrences(): Occurrence[] {
   const out: Occurrence[] = [];
   for (const p of store.points) {
     if (p.mode !== 'event') continue;
-    if (TYPES[p.type].alert && (!showAlerts || (p.expiresAt ?? 0) < Date.now())) continue;
+    if (TYPES[p.type].alert && (!showAlerts || kind === 'flash' || (p.expiresAt ?? 0) < Date.now())) continue;
+    if (kind === 'flash' && !p.flash) continue;
+    if (kind === 'events' && p.flash) continue;
     out.push(...occurrences(p, from, to));
   }
   return out.sort((a, b) => a.start - b.start);
@@ -73,15 +77,20 @@ export function render() {
       ),
     ),
     strip,
-    h('label', { class: 'toggle-line' },
+    h('div', { class: 'agenda-kind' }, chips<'all' | 'events' | 'flash'>([
+      { value: 'all', label: 'Tout' },
+      { value: 'events', label: 'Événements', icon: 'calendar' },
+      { value: 'flash', label: 'Flash', icon: 'zap' },
+    ], kind, (v) => { kind = v; render(); })),
+    kind === 'flash' ? null : h('label', { class: 'toggle-line' },
       h('input', { type: 'checkbox', checked: showAlerts, onchange: (e: Event) => { showAlerts = (e.target as HTMLInputElement).checked; render(); } }),
       h('span', { class: 'switch' }), 'Afficher les alertes (warning, danger, police)'),
     list,
     any ? null : h('div', { class: 'empty' },
-      icon('calendar-days', 40, 1.6),
-      h('strong', null, 'Aucun événement cette semaine'),
-      h('span', null, 'Ajoute une AG, un tractage ou un collage pour le voir apparaître ici.'),
-      h('button', { class: 'btn btn-primary', onclick: () => { store.setView('map'); newPointFlow('event'); } }, icon('plus', 18), 'Créer un événement'),
+      icon(kind === 'flash' ? 'zap' : 'calendar-days', 40, 1.6),
+      h('strong', null, kind === 'flash' ? 'Aucun flash cette semaine' : 'Aucun événement cette semaine'),
+      h('span', null, kind === 'flash' ? 'Un flash, c\'est une action improvisée qui commence dans les minutes qui viennent.' : 'Ajoute une AG, un tractage ou un collage pour le voir apparaître ici.'),
+      h('button', { class: 'btn btn-primary', onclick: () => { store.setView('map'); newPointFlow(kind === 'flash' ? 'flash' : 'event'); } }, icon('plus', 18), kind === 'flash' ? 'Lancer un flash' : 'Créer un événement'),
     ),
   );
 }
@@ -94,8 +103,8 @@ function card(o: Occurrence) {
   const live = o.start <= now && o.end > now;
   const past = o.end <= now;
   return h('button', {
-    class: `ev-card${live ? ' live' : ''}${past ? ' past' : ''}`, type: 'button',
-    style: { background: bg, color: ink },
+    class: `ev-card${live ? ' live' : ''}${past ? ' past' : ''}${p.flash ? ' is-flash' : ''}`, type: 'button',
+    style: { background: bg, color: ink, '--c': bg } as Record<string, string>,
     onclick: () => onOpen(o),
   },
   h('span', { class: 'ev-ico' }, icon(iconOf(p), 22)),
