@@ -31,7 +31,9 @@ Lien admin perdu ? `npm run invite-admin -- https://ton-domaine.fr` crée une in
 
 ## Mettre en ligne
 
-**Guide pas à pas pour un VPS : [DEPLOIEMENT.md](DEPLOIEMENT.md).** Le script `deploy/install.sh` installe tout en une commande : Node, Caddy avec HTTPS, service systemd, sauvegardes quotidiennes et pare-feu.
+**Avec Docker : [DOCKER.md](DOCKER.md)** (`docker compose up -d`, Caddy en option pour le HTTPS).
+
+**Guide pas à pas pour un VPS sans Docker : [DEPLOIEMENT.md](DEPLOIEMENT.md).** Le script `deploy/install.sh` installe tout en une commande : Node, Caddy avec HTTPS, service systemd, sauvegardes quotidiennes et pare-feu.
 
 L'hébergement PHP mutualisé ne fait pas tourner Node. Il faut un serveur Node avec un **disque persistant**, car la base SQLite et les photos sont dans `data/`.
 

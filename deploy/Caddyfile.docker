@@ -1,0 +1,8 @@
+# Caddy (profil « caddy » de docker-compose) : HTTPS automatique pour $DOMAIN.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy terrain:3180 {
+		# Temps réel (SSE) : chaque message est transmis immédiatement.
+		flush_interval -1
+	}
+}

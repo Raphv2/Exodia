@@ -1,0 +1,44 @@
+# Terrain — déploiement Docker.
+#
+# Cas 1 : le serveur a déjà un reverse proxy HTTPS (Nginx, Traefik, Nginx Proxy Manager…)
+#   docker compose up -d
+#   → l'app écoute sur 127.0.0.1:3180, à relier au proxy (voir DOCKER.md).
+#
+# Cas 2 : rien n'occupe les ports 80/443 → Caddy fournit le HTTPS automatiquement :
+#   DOMAIN=carte.raphaelgosset.fr docker compose --profile caddy up -d
+
+services:
+  terrain:
+    build: .
+    image: terrain:latest
+    container_name: terrain
+    restart: unless-stopped
+    init: true   # arrêt propre (signaux transmis à Node)
+    environment:
+      # Adresse publique, utilisée dans les liens d'invitation.
+      PUBLIC_URL: https://${DOMAIN:-carte.raphaelgosset.fr}
+    volumes:
+      - terrain-data:/data
+    ports:
+      - "127.0.0.1:${TERRAIN_PORT:-3180}:3180"
+
+  caddy:
+    image: caddy:2
+    profiles: ["caddy"]
+    restart: unless-stopped
+    depends_on: [terrain]
+    environment:
+      DOMAIN: ${DOMAIN:-carte.raphaelgosset.fr}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile.docker:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  terrain-data:
+  caddy-data:
+  caddy-config:
