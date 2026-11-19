@@ -124,7 +124,7 @@ function startApp() {
   };
 
   const filterChip = (g: Group, label: string, color: string) => h('button', {
-    class: `fchip${store.filters[g] ? ' on' : ''}`, type: 'button', style: { '--c': color } as Record<string, string>,
+    class: `fchip fchip-${g}${store.filters[g] ? ' on' : ''}`, type: 'button', style: { '--c': color } as Record<string, string>,
     'aria-pressed': String(store.filters[g]),
     onclick: (e: Event) => {
       store.filters[g] = !store.filters[g];

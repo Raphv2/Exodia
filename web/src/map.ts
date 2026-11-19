@@ -87,7 +87,8 @@ function markerIcon(p: Point, extra: { cls?: string; badge?: string | null } = {
   const meta = TYPES[p.type];
   const { color, ink } = paintOf(p);
   const mine = myPledge(p);
-  const cls = ['pin', mine ? `pin-${mine}` : '', p.flash ? 'pin-flash' : '', meta.alert ? `pin-alert pin-${p.type}` : '', p.status ? `pin-st-${p.status}` : '', extra.cls ?? ''].join(' ');
+  // Forme de l'épingle : goutte pour un point fixe, carré arrondi avec une pointe pour un événement.
+  const cls = ['pin', p.mode === 'event' && !meta.alert ? 'pin-event' : '', mine ? `pin-${mine}` : '', p.flash ? 'pin-flash' : '', meta.alert ? `pin-alert pin-${p.type}` : '', p.status ? `pin-st-${p.status}` : '', extra.cls ?? ''].join(' ');
   const html = `<div class="${cls}" style="--c:${color};--ink:${ink}"><div class="pin-head">${iconHtml(iconOf(p), 18, 2.4)}</div>${extra.badge ? `<span class="pin-badge">${extra.badge}</span>` : ''}${p.photo ? '<span class="pin-photo"></span>' : ''}${p.flash ? `<span class="pin-zap">${iconHtml('zap', 11, 2.6)}</span>` : ''}${mine ? `<span class="pin-me" title="${mine === 'going' ? 'Tu y participes' : 'Tu fournis du matériel'}">${iconHtml(mine === 'going' ? 'check' : 'package', 12, 3)}</span>` : ''}</div>`;
   return L.divIcon({ html, className: 'pin-wrap', iconSize: [36, 46], iconAnchor: [18, 42], tooltipAnchor: [0, -38] });
 }

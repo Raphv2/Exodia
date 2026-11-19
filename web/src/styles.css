@@ -853,3 +853,16 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
   .seg-btn { font-size: 15px; padding: 0 4px; gap: 4px; }
   .btn-big { font-size: 17px; }
 }
+
+/* ---------- Point fixe ou événement : deux formes d'épingle ---------- */
+/* Événement : carré arrondi posé sur une petite pointe (le point fixe garde la goutte). */
+.pin-event .pin-head { border-radius: 10px; transform: none; top: 1px; }
+.pin-event .pin-head .ico { transform: none; }
+.pin-event .pin-head::before {
+  content: ''; position: absolute; left: 50%; bottom: -8px; width: 11px; height: 11px;
+  background: inherit; border-right: 2.5px solid #fff; border-bottom: 2.5px solid #fff;
+  transform: translateX(-50%) rotate(45deg); border-bottom-right-radius: 3px;
+}
+/* Même distinction dans les filtres de la carte. */
+.fchip-fixe i { border-radius: 50% 50% 50% 0; transform: rotate(-45deg); }
+.fchip-event i { border-radius: 3px; }

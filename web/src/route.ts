@@ -27,15 +27,43 @@ export function mountRoute(el: HTMLElement) {
   root = el;
   store.on('points', render);
   store.on('route', render);
+  // En ouvrant l'onglet Trajet, on retrie par distance (puis l'ordre ne bouge plus pendant qu'on coche).
+  store.on('view', () => { if (store.view === 'route') { resortRouteList(); render(); } });
   render();
 }
 
+/**
+ * Ordre d'affichage figé : trié par distance la première fois, puis on n'y touche plus
+ * (sinon la liste se réordonne à chaque mouvement du GPS, pendant qu'on coche).
+ * Les nouveaux points vont à la fin.
+ */
+let listOrder: string[] = [];
+
 function candidates(): Point[] {
   const ref = lastPosition();
-  return store.points
+  const pts = store.points
     .filter((p) => TYPES[p.type].routable && isActive(p))
-    .filter((p) => !opts.onlyToDo || p.type !== 'panneau' || p.status !== 'colle' || store.routeSelection.has(p.id))
+    .filter((p) => !opts.onlyToDo || p.type !== 'panneau' || p.status !== 'colle' || store.routeSelection.has(p.id));
+  const known = new Set(listOrder);
+  const fresh = pts.filter((p) => !known.has(p.id))
     .sort((a, b) => (ref ? distance(ref, a) - distance(ref, b) : a.title.localeCompare(b.title, 'fr')));
+  listOrder = [...listOrder, ...fresh.map((p) => p.id)];
+  const rank = new Map(listOrder.map((id, i) => [id, i]));
+  return pts.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+}
+
+/** Retrier la liste par distance (à l'ouverture de l'onglet Trajet). */
+export function resortRouteList() {
+  listOrder = [];
+}
+
+/** Élément qui défile autour de l'écran Trajet (pour garder la position quand on redessine). */
+function scroller(): HTMLElement | null {
+  for (let el: HTMLElement | null = root; el; el = el.parentElement) {
+    const s = getComputedStyle(el);
+    if (/(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight) return el;
+  }
+  return null;
 }
 
 const selected = () => store.points.filter((p) => store.routeSelection.has(p.id));
@@ -139,6 +167,18 @@ async function share() {
 
 export function render() {
   if (!root) return;
+  // Garder la position de défilement : cocher un point ne doit pas renvoyer en haut de la liste.
+  // (le panneau défile, et la liste des points a aussi sa propre zone de défilement)
+  const sc = scroller();
+  const keepTop = sc?.scrollTop ?? 0;
+  const listTop = root.querySelector<HTMLElement>('.pick-list')?.scrollTop ?? 0;
+  renderContent();
+  if (sc) sc.scrollTop = keepTop;
+  const list = root.querySelector<HTMLElement>('.pick-list');
+  if (list) list.scrollTop = listTop;
+}
+
+function renderContent() {
   const cands = candidates();
   const sel = selected();
   const ordered = orderedPoints();
