@@ -806,3 +806,21 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 
 .arrive-later { display: flex; flex-direction: column; gap: 8px; }
 .btn.is-current { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--violet); }
+
+/* ---------- Flash : événement improvisé, avec un petit éclair ---------- */
+.seg-3 { grid-auto-columns: minmax(0, 1fr); }
+.seg-3 .seg-btn { flex-direction: column; gap: 3px; min-height: 58px; padding: 6px 2px; font-size: 16px; line-height: 1; white-space: nowrap; }
+.seg-3 .seg-btn.on:last-child { background: var(--ink); color: var(--yellow); }
+.pin-zap {
+  position: absolute; left: -6px; top: -6px; width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--yellow); color: var(--ink);
+  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.35); z-index: 2;
+}
+.pin-zap .ico { color: var(--ink); }
+.pin-flash .pin-head::after {
+  content: ''; position: absolute; inset: -7px; border-radius: 50%;
+  border: 3px solid var(--yellow); animation: pulse 1.3s ease-out infinite;
+}
+.ev-flash { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px; background: var(--yellow); color: var(--ink); font-weight: 800; font-size: 12px; text-transform: uppercase; }
+.tag-flash { background: var(--yellow); color: var(--ink); }
+.flash-section .section-title .ico { color: var(--ink); }

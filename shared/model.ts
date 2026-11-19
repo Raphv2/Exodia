@@ -54,6 +54,10 @@ export const ALERT_PRESETS: Record<AlertType, string[]> = {
   police: ['CRS', 'Police', 'BAC', 'Contrôle d\'identité', 'Nasse', 'Fourgons'],
 };
 
+/** Flash : dans combien de temps ça commence (min) et combien de temps ça dure (min). */
+export const FLASH_STARTS = [0, 15, 30, 60] as const;
+export const FLASH_DURATIONS = [30, 60, 120, 180] as const;
+
 /** Matériel proposé à la création d'un événement (on peut aussi en ajouter à la main). */
 export const MATERIAL_PRESETS: Partial<Record<PointType, string[]>> = {
   tractage: ['Tracts', 'Affiches', 'Colle', 'Table', 'Chasubles', 'Mégaphone', 'Flyers'],
@@ -164,6 +168,8 @@ export interface Point {
   parentId: string | null;
   /** Événement : matériel à prévoir. */
   material: string[];
+  /** Flash : événement improvisé, qui commence dans les minutes qui viennent (notification à tout le monde). */
+  flash: boolean;
   /** Événement : qui a dit venir. */
   participants: Participant[];
   /** Événement : qui fournit quoi (clé = élément de `material`). Fournir n'oblige pas à venir. */
@@ -193,6 +199,8 @@ export interface PointInput {
   parentId?: string | null;
   /** Événement : matériel à prévoir. */
   material?: string[];
+  /** Flash : événement improvisé. */
+  flash?: boolean;
 }
 
 export interface Device {

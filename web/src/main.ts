@@ -17,7 +17,7 @@ import { mountAgenda } from './agenda';
 import { mountRoute, toggleInRoute } from './route';
 import { mountTeam } from './team';
 import { openSheet } from './sheet';
-import { h, icon, toast, isDesktop } from './ui';
+import { h, icon, toast, isDesktop, time } from './ui';
 import { TYPES, type Point } from '../../shared/model';
 
 const app = document.getElementById('app')!;
@@ -216,13 +216,17 @@ function connectStream() {
   const es = new EventSource('/api/stream');
   let t: number | undefined;
   es.addEventListener('points', (ev) => {
-    const data = JSON.parse((ev as MessageEvent).data || '{}') as { by?: string; action?: string; type?: string; title?: string };
+    const data = JSON.parse((ev as MessageEvent).data || '{}') as { by?: string; action?: string; type?: string; title?: string; flash?: boolean; startsAt?: number };
     clearTimeout(t);
     t = window.setTimeout(() => store.refresh().catch(() => {}), 300);
     if (data.by === store.me.id) return;
     if (data.action === 'create' && (data.type === 'warning' || data.type === 'danger' || data.type === 'police')) {
       toast(data.type === 'police' ? 'POLICE / CRS signalée sur la carte' : data.type === 'danger' ? 'Nouveau DANGER signalé sur la carte' : 'Nouveau warning signalé sur la carte', 'err', 6000);
       navigator.vibrate?.([200, 100, 200]);
+    } else if (data.action === 'create' && data.flash) {
+      const when = !data.startsAt || data.startsAt <= Date.now() + 60_000 ? 'maintenant' : `à ${time(data.startsAt)}`;
+      toast(`⚡ Flash : « ${data.title ?? 'événement'} » ${when}`, 'info', 8000);
+      navigator.vibrate?.([120, 60, 120, 60, 120]);
     } else if (data.action === 'problem') {
       toast(`Problème signalé : « ${data.title ?? 'un point'} »`, 'err', 6000);
       navigator.vibrate?.([200, 100, 200]);

@@ -91,6 +91,7 @@ db.exec(`
 const cols = (table: string) => (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
 if (!cols('points').includes('parent_id')) db.exec('ALTER TABLE points ADD COLUMN parent_id TEXT');
 if (!cols('pledges').includes('arrive_at')) db.exec('ALTER TABLE pledges ADD COLUMN arrive_at INTEGER');
+if (!cols('points').includes('flash')) db.exec('ALTER TABLE points ADD COLUMN flash INTEGER NOT NULL DEFAULT 0');
 if (!cols('points').includes('material')) db.exec('ALTER TABLE points ADD COLUMN material TEXT');
 if (!cols('points').includes('status_at')) db.exec('ALTER TABLE points ADD COLUMN status_at INTEGER');
 db.exec('CREATE INDEX IF NOT EXISTS points_parent ON points(parent_id)');

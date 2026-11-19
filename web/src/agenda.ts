@@ -101,6 +101,7 @@ function card(o: Occurrence) {
   h('span', { class: 'ev-ico' }, icon(iconOf(p), 22)),
   h('span', { class: 'ev-main' },
     h('span', { class: 'ev-time' },
+      p.flash ? h('span', { class: 'ev-flash' }, icon('zap', 13), 'Flash') : null,
       isAllDay(o.start, o.end) ? 'Toute la journée' : meta.alert ? `${time(o.start)} → ${time(o.end)}` : `${time(o.start)} – ${time(o.end)}`,
       live ? h('span', { class: 'ev-live' }, 'en cours') : null,
       p.recurrence !== 'none' ? icon('repeat', 14) : null),

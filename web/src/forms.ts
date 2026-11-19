@@ -7,7 +7,7 @@ import {
   h, icon, clear, toast, toDateInput, toTimeInput, fromInputs, addDays, startOfDay, inkFor, isAllDay,
 } from './ui';
 import {
-  TYPES, ALERT_ICONS, MATERIAL_PRESETS, MATERIAL_DEFAULT, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, STATUS_HINT, STATUSES, ALERT_DURATIONS, ALERT_PRESETS,
+  TYPES, ALERT_ICONS, MATERIAL_PRESETS, FLASH_STARTS, FLASH_DURATIONS, MATERIAL_DEFAULT, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, STATUS_HINT, STATUSES, ALERT_DURATIONS, ALERT_PRESETS,
   type Mode, type PointType, type Recurrence, type PointStatus, type Point, type PointInput, type AlertType,
 } from '../../shared/model';
 import { isActive, nextOccurrence } from '../../shared/time';
@@ -151,6 +151,10 @@ interface Draft {
   parentId: string | null;
   /** Événement : matériel à prévoir. */
   material: string[];
+  /** Flash : événement improvisé (commence dans `flashIn` min, dure `flashDur` min). */
+  flash: boolean;
+  flashIn: number;
+  flashDur: number;
   allDay: boolean;
   /** L'utilisateur a choisi lui-même « toute la journée » ou non. */
   allDayTouched: boolean;
@@ -169,7 +173,11 @@ export function activeBlocus(): Point[] {
 
 export interface Preset { type?: PointType; parentId?: string | null }
 
-function draftFrom(p: Point | null, pos: Pos, mode: Mode = 'fixe', preset: Preset = {}): Draft {
+/** Ce que propose le haut du formulaire : un flash est un événement improvisé. */
+export type FormMode = Mode | 'flash';
+
+function draftFrom(p: Point | null, pos: Pos, formMode: FormMode = 'fixe', preset: Preset = {}): Draft {
+  const mode: Mode = formMode === 'fixe' ? 'fixe' : 'event';
   const nextHour = new Date();
   nextHour.setMinutes(0, 0, 0);
   nextHour.setHours(nextHour.getHours() + 1);
@@ -196,10 +204,13 @@ function draftFrom(p: Point | null, pos: Pos, mode: Mode = 'fixe', preset: Prese
     status: p?.status ?? 'a_coller',
     parentId: p ? p.parentId : preset.parentId !== undefined ? preset.parentId : activeBlocus()[0]?.id ?? null,
     material: [...(p?.material ?? [])],
+    flash: p ? p.flash : formMode === 'flash',
+    flashIn: 15,
+    flashDur: 60,
   };
 }
 
-export async function newPointFlow(mode: Mode = 'fixe', preset: Preset = {}) {
+export async function newPointFlow(mode: FormMode = 'fixe', preset: Preset = {}) {
   const color = preset.type ? TYPES[preset.type].color : '#7B13D6';
   const pos = await pickLocation({ title: preset.type ? `Nouveau ${TYPES[preset.type].label.toLowerCase()}` : 'Nouveau point', color });
   if (!pos) return;
@@ -240,7 +251,15 @@ function openPointForm(d: Draft) {
     const title = h('input', { class: 'input', type: 'text', maxlength: '80', value: d.title, placeholder: meta.placeholder, autocomplete: 'off', oninput: (e: Event) => (d.title = (e.target as HTMLInputElement).value) });
     const desc = h('textarea', { class: 'input', rows: '3', maxlength: '2000', placeholder: 'Infos utiles : accès, consignes, contact…', oninput: (e: Event) => (d.description = (e.target as HTMLTextAreaElement).value) }, d.description);
 
-    const schedule = d.mode === 'event' ? h('div', { class: 'card-section' },
+    // Flash (à la création) : pas de date à saisir, juste « dans combien de temps » et « combien de temps ».
+    const flashSchedule = d.mode === 'event' && d.flash && !isEdit ? h('div', { class: 'card-section flash-section' },
+      h('div', { class: 'section-title' }, icon('zap', 18), 'Flash'),
+      group('Ça commence', chips(FLASH_STARTS.map((m) => ({ value: m as number, label: m === 0 ? 'Maintenant' : `Dans ${durLabel(m)}` })), d.flashIn, (v) => (d.flashIn = v), color)),
+      group('Durée', chips(FLASH_DURATIONS.map((m) => ({ value: m as number, label: durLabel(m) })), d.flashDur, (v) => (d.flashDur = v), color)),
+      h('p', { class: 'field-hint' }, 'Tout le monde reçoit une notification dès que tu valides.'),
+    ) : null;
+
+    const schedule = flashSchedule ?? (d.mode === 'event' ? h('div', { class: 'card-section' },
       h('div', { class: 'section-title' }, icon('clock', 18), 'Quand ?'),
       h('label', { class: 'toggle-line' },
         h('input', { type: 'checkbox', checked: d.allDay, onchange: (e: Event) => { d.allDay = (e.target as HTMLInputElement).checked; d.allDayTouched = true; render(); } }),
@@ -251,11 +270,11 @@ function openPointForm(d: Draft) {
         d.allDay ? null : field('Fin', h('input', { class: 'input', type: 'time', value: d.end, step: '300', onchange: (e: Event) => (d.end = (e.target as HTMLInputElement).value) })),
       ),
       d.allDay ? h('p', { class: 'field-hint' }, 'Visible sur la carte jusqu\'à minuit, puis le point disparaît tout seul.') : null,
-      group('Répéter', chips((Object.keys(RECURRENCE_LABEL) as Recurrence[]).map((r) => ({ value: r, label: RECURRENCE_LABEL[r] })), d.recurrence, (v) => { d.recurrence = v; render(); }, color)),
-      d.recurrence !== 'none'
+      d.flash ? null : group('Répéter', chips((Object.keys(RECURRENCE_LABEL) as Recurrence[]).map((r) => ({ value: r, label: RECURRENCE_LABEL[r] })), d.recurrence, (v) => { d.recurrence = v; render(); }, color)),
+      !d.flash && d.recurrence !== 'none'
         ? field('Jusqu\'au', h('input', { class: 'input', type: 'date', value: d.until, min: d.date, onchange: (e: Event) => (d.until = (e.target as HTMLInputElement).value) }), 'Laisse vide pour répéter sans fin.', true)
         : null,
-    ) : null;
+    ) : null);
 
     const status = statuses ? group(d.type === 'blocage' ? 'Sur place en ce moment' : 'État du panneau',
       chips(statuses.map((s) => ({ value: s, label: STATUS_HINT[s] ? `${STATUS_LABEL[s]} · ${STATUS_HINT[s]}` : STATUS_LABEL[s] })), d.status, (v) => (d.status = v), color)) : null;
@@ -285,10 +304,16 @@ function openPointForm(d: Draft) {
       }));
 
     clear(body,
-      segmented<Mode>([
+      segmented<FormMode>([
         { value: 'fixe', label: 'Point fixe', icon: 'map-pin' },
         { value: 'event', label: 'Événement', icon: 'calendar' },
-      ], d.mode, (m) => { d.mode = m; render(); }, 'seg-big'),
+        { value: 'flash', label: 'Flash', icon: 'zap' },
+      ], d.mode === 'event' && d.flash ? 'flash' : d.mode, (m) => {
+        d.mode = m === 'fixe' ? 'fixe' : 'event';
+        d.flash = m === 'flash';
+        if (d.flash) d.recurrence = 'none';
+        render();
+      }, 'seg-big seg-3'),
       group('Type', typeGrid),
       field('Titre', title),
       schedule,
@@ -319,8 +344,16 @@ function openPointForm(d: Draft) {
       lat: d.lat, lng: d.lng, color: d.color, status: STATUSES[d.type] ? d.status : null,
       parentId: d.type === 'blocage' ? d.parentId : null,
       material: d.mode === 'event' ? d.material : [],
+      flash: d.mode === 'event' && d.flash,
     };
-    if (d.mode === 'event') {
+    if (d.mode === 'event' && d.flash && !isEdit) {
+      const s = new Date(Date.now() + d.flashIn * 60_000);
+      s.setSeconds(0, 0);
+      input.startsAt = s.getTime();
+      input.endsAt = input.startsAt + d.flashDur * 60_000;
+      input.recurrence = 'none';
+      input.recurrenceUntil = null;
+    } else if (d.mode === 'event') {
       if (!d.date || (!d.allDay && (!d.start || !d.end))) return toast('Indique la date, l\'heure de début et de fin.', 'err');
       let s: number, e: number;
       if (d.allDay) {
