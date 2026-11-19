@@ -268,6 +268,22 @@ points.patch('/points/:id/parent', (req, res) => {
   res.json({ point: pointDto(row.id)! });
 });
 
+/** Prolonger un flash : son auteur·rice (ou un admin) ajoute du temps, tant qu'il n'est pas terminé. */
+points.post('/points/:id/extend-flash', (req, res) => {
+  const minutes = z.number().int().min(5).max(240).safeParse(req.body?.minutes);
+  if (!minutes.success) return res.status(400).json({ error: 'Durée invalide' });
+  const row = getPoint(req.params.id);
+  if (!row || !row.flash || row.ends_at == null) return res.status(404).json({ error: 'Flash introuvable' });
+  if (!canEdit(req.device!, row)) return res.status(403).json({ error: 'Seul·e l\'auteur·rice du flash ou un admin peut le prolonger.' });
+  const now = Date.now();
+  if (row.ends_at <= now) return res.status(400).json({ error: 'Ce flash est déjà terminé.' });
+  const end = row.ends_at + minutes.data * 60_000;
+  if (end - (row.starts_at ?? now) > 24 * 3600_000) return res.status(400).json({ error: 'Un flash ne peut pas durer plus de 24 h.' });
+  db.prepare('UPDATE points SET ends_at = ?, expires_at = ?, updated_at = ? WHERE id = ?').run(end, end, now, row.id);
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  res.json({ point: pointDto(row.id)! });
+});
+
 /** Prolonger une alerte : tout le monde peut confirmer qu'elle est toujours d'actualité. */
 points.post('/points/:id/extend', (req, res) => {
   const minutes = z.number().int().min(5).max(240).safeParse(req.body?.minutes);

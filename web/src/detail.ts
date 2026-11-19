@@ -253,6 +253,19 @@ function howFar(p: Point) {
   return wrap;
 }
 
+/** Rajouter du temps à un flash : choix rapide de la durée. */
+function openExtendFlash(p: Point) {
+  const pick = (m: number) => { s.close(); act(() => api.extendFlash(p.id, m), `Flash prolongé de ${durLabel(m)}`); };
+  const s = openSheet({
+    title: 'Prolonger le flash',
+    accent: paintOf(p).color,
+    body: h('div', { class: 'form' },
+      h('p', { class: 'muted' }, `« ${p.title} » se termine à ${time(p.endsAt!)}. Rajouter :`),
+      h('div', { class: 'grid-3' }, [15, 30, 60].map((m) => h('button', { class: 'btn btn-outline', type: 'button', onclick: () => pick(m) }, `+ ${durLabel(m)}`))),
+    ),
+  });
+}
+
 export function directionsUrl(p: { lat: number; lng: number }) {
   return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
 }
@@ -328,6 +341,9 @@ export function openDetail(p: Point) {
       if (!(await confirmSheet('Terminer maintenant ?', `« ${p.title} » disparaîtra de la carte, mais restera visible dans l'agenda.${more}`, 'Terminer', false))) return;
       act(() => api.finish(p.id), 'Événement terminé');
     } }, icon('flag', 18), 'Terminer maintenant') : null,
+    // Flash : l'auteur·rice (ou un admin) peut rajouter du temps tant qu'il n'est pas fini.
+    canEdit && p.flash && (p.endsAt ?? 0) > Date.now() ? h('button', { class: 'btn btn-light', type: 'button', onclick: () => openExtendFlash(p) },
+      icon('timer', 18), 'Prolonger') : null,
     canEdit ? h('button', { class: 'btn btn-light', type: 'button', onclick: () => { sheet.close(); editPoint(p); } }, icon('pencil', 18), 'Modifier') : null,
     canEdit ? h('button', { class: 'btn btn-light btn-text-danger', type: 'button', onclick: async () => {
       if (!(await confirmSheet('Supprimer ce point ?', `« ${p.title} » disparaîtra de la carte pour tout le monde.`, 'Supprimer'))) return;

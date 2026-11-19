@@ -47,6 +47,7 @@ export const api = {
   participate: (id: string, on: boolean, arriveAt: number | null = null) => req<{ point: Point }>('POST', `/points/${id}/participate`, { on, arriveAt }),
   provide: (id: string, item: string, on: boolean) => req<{ point: Point }>('POST', `/points/${id}/provide`, { item, on }),
   extend: (id: string, minutes: number) => req<{ point: Point }>('POST', `/points/${id}/extend`, { minutes }),
+  extendFlash: (id: string, minutes: number) => req<{ point: Point }>('POST', `/points/${id}/extend-flash`, { minutes }),
   deletePoint: (id: string) => req('DELETE', `/points/${id}`),
   finish: (id: string) => req<{ point: Point }>('POST', `/points/${id}/finish`, {}),
   reportProblem: (id: string, message: string, durationMinutes: number) =>
