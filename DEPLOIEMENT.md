@@ -45,22 +45,30 @@ L'adresse affichée doit être celle de ton VPS.
 
 ## 3. Installer l'app
 
-Ton dépôt GitHub est **privé** : le serveur ne peut pas télécharger le script tout seul. On l'envoie depuis ton PC. Dans PowerShell :
-```powershell
-scp C:\Users\rgosset\Documents\dev\terrain\deploy\install.sh root@203.0.113.42:
-```
-
-Connecte-toi au serveur :
+Connecte-toi au serveur depuis PowerShell :
 ```powershell
 ssh root@203.0.113.42
 ```
 
-Puis, **sur le serveur** :
+Puis, **sur le serveur**, télécharge le script. Tu peux le lire avant de le lancer :
+```bash
+curl -fsSL https://raw.githubusercontent.com/Raphv2/lfiMap/main/deploy/install.sh -o install.sh
+less install.sh
+```
+
+Lance-le :
 ```bash
 bash install.sh carte.raphaelgosset.fr
 ```
 
-**Autoriser le serveur à lire le dépôt privé.** Au premier lancement, le script crée une *clé de déploiement* propre à ce serveur et l'affiche (une ligne qui commence par `ssh-ed25519`). Puis il attend :
+### Si le dépôt redevient privé
+
+Le serveur ne peut plus télécharger le script : envoie-le depuis ton PC.
+```powershell
+scp C:\Users\rgosset\Documents\dev\terrain\deploy\install.sh root@203.0.113.42:
+```
+
+Au premier lancement, le script crée alors une *clé de déploiement* propre à ce serveur et l'affiche (une ligne qui commence par `ssh-ed25519`). Puis il attend :
 
 1. Ouvre la page indiquée, `https://github.com/Raphv2/lfiMap/settings/keys/new` (dépôt → Settings → Deploy keys → Add deploy key).
 2. **Title** : `serveur carte.raphaelgosset.fr`.
