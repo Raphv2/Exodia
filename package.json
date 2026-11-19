@@ -9,6 +9,7 @@
     "build": "vite build",
     "start": "tsx server/index.ts",
     "invite-admin": "tsx server/cli-invite.ts",
+    "backup": "tsx server/backup.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

@@ -61,8 +61,11 @@ if (hasBuild) {
 cleanup();
 setInterval(cleanup, 3600_000).unref();
 
-app.listen(PORT, () => {
+// HOST=127.0.0.1 en production : seul le reverse proxy (Caddy) peut joindre l'app.
+const onListen = () => {
   const base = process.env.PUBLIC_URL ?? (hasBuild ? `http://localhost:${PORT}` : 'http://localhost:5180');
   console.log(`Terrain API sur http://localhost:${PORT}${hasBuild ? '' : '  (interface : npm run dev → http://localhost:5180)'}`);
   ensureBootstrapAdmin(base);
-});
+};
+if (process.env.HOST) app.listen(PORT, process.env.HOST, onListen);
+else app.listen(PORT, onListen);

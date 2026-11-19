@@ -31,15 +31,17 @@ Lien admin perdu ? `npm run invite-admin -- https://ton-domaine.fr` crée une in
 
 ## Mettre en ligne
 
-L'hébergement PHP mutualisé ne fait pas tourner Node. Il faut un serveur Node avec un **disque persistant** (la base SQLite et les photos sont dans `data/`) :
+**Guide pas à pas pour un VPS : [DEPLOIEMENT.md](DEPLOIEMENT.md).** Le script `deploy/install.sh` installe tout en une commande : Node, Caddy avec HTTPS, service systemd, sauvegardes quotidiennes et pare-feu.
 
-- un petit **VPS** (Hetzner, OVH, Scaleway…) avec Caddy en reverse proxy, qui gère le HTTPS automatiquement ;
-- ou **Render**, **Railway** ou **Fly.io**, avec un volume persistant monté sur `data/`.
+L'hébergement PHP mutualisé ne fait pas tourner Node. Il faut un serveur Node avec un **disque persistant**, car la base SQLite et les photos sont dans `data/`.
+
+En manuel :
 
 ```bash
 npm ci
 npm run build      # compile l'interface dans dist/web
 npm start          # sert l'interface et l'API sur $PORT (3180 par défaut)
+npm run backup -- /chemin/sauvegardes 14   # copie cohérente de la base + photos, garde 14 jours
 ```
 
 Variables d'environnement :
@@ -50,16 +52,7 @@ Variables d'environnement :
 | `PUBLIC_URL` | URL publique, ex. `https://terrain.mondomaine.fr`, utilisée dans les liens d'invitation. |
 | `TRUST_PROXY` | `1` derrière un reverse proxy HTTPS (cookies `Secure`, vraie IP pour la limitation). |
 | `DATA_DIR` | Dossier des données (`data` par défaut). |
-
-Exemple de Caddyfile :
-
-```
-terrain.mondomaine.fr {
-    reverse_proxy localhost:3180
-}
-```
-
-**Sauvegarde** : copie le dossier `data/` (base `terrain.db` et `uploads/`).
+| `HOST` | Adresse d'écoute ; `127.0.0.1` pour n'accepter que le reverse proxy. |
 
 ## Sécurité : pourquoi pas l'IP ou l'adresse MAC ?
 

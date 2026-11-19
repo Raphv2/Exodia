@@ -1,0 +1,15 @@
+[Unit]
+Description=Sauvegarde de Terrain (base + photos)
+
+[Service]
+Type=oneshot
+User=terrain
+Group=terrain
+WorkingDirectory=/opt/terrain
+Environment=DATA_DIR=/var/lib/terrain
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning --import tsx server/backup.ts /var/backups/terrain 14
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/terrain /var/backups/terrain

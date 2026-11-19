@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Fichiers exécutés sur le serveur Linux : toujours en fins de ligne Unix.
+*.sh text eol=lf
+deploy/* text eol=lf

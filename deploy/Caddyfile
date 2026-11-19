@@ -1,0 +1,8 @@
+# Terrain : Caddy obtient et renouvelle le certificat HTTPS tout seul.
+__DOMAIN__ {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3180 {
+		# Temps réel (SSE) : on transmet chaque message immédiatement.
+		flush_interval -1
+	}
+}
