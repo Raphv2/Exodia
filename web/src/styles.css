@@ -923,3 +923,11 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .settings-btn:hover { background: rgba(255,255,255,0.24); }
 .settings-btn .ico { color: #fff; }
 .settings-btn + .me-chip { margin-left: 8px; }
+
+/* Filtre « Blocus » : actif = couleur des blocus. */
+.fchip-blocus.on { background: #5C1033; color: #fff; }
+.fchip-blocus.on .ico { color: #fff; }
+@media (max-width: 600px) {
+  /* La barre de filtres défile : un fondu à droite le montre. */
+  .map-filters { -webkit-mask-image: linear-gradient(to right, #000 88%, transparent); mask-image: linear-gradient(to right, #000 88%, transparent); padding-right: 18px; }
+}

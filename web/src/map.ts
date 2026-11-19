@@ -20,6 +20,8 @@ export function visiblePoints(now = Date.now()): Point[] {
   const dayEnd = addDays(dayStart, 1) - 1;
   return store.points.filter((p) => {
     if (!isActive(p, now)) return false;
+    // Vue « Blocus » : on ne garde que les blocus et leurs blocages, rien d'autre.
+    if (store.blocusOnly) return p.type === 'blocus' || p.type === 'blocage';
     // Un point avec un problème en cours reste toujours visible, quels que soient les filtres.
     if (liveProblems(p, now).length) return true;
     const g = groupOf(p);

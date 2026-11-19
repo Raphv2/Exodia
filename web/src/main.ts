@@ -145,6 +145,14 @@ function startApp() {
     store.emit('filters');
   } }, icon('sun', 16, 2.4), h('span', { class: 'fchip-today-label' }, 'Aujourd\'hui'));
 
+  // « Blocus » : n'afficher que les blocus et les blocages (qui restent des points fixes).
+  const blocusChip = h('button', { class: 'fchip fchip-today fchip-blocus', type: 'button', 'aria-pressed': 'false', 'aria-label': 'Seulement les blocus et blocages', title: 'Seulement les blocus et blocages', onclick: () => {
+    store.blocusOnly = !store.blocusOnly;
+    blocusChip.classList.toggle('on', store.blocusOnly);
+    blocusChip.setAttribute('aria-pressed', String(store.blocusOnly));
+    store.emit('filters');
+  } }, icon('flame', 16, 2.4), h('span', { class: 'fchip-today-label' }, 'Blocus'));
+
   const mapEl = h('div', { id: 'map', 'aria-label': 'Carte' });
   const shell = h('div', { class: 'app' },
     h('header', { class: 'topbar' },
@@ -165,6 +173,7 @@ function startApp() {
           filterChip('flash', 'Flash', 'Flash', '#C99700', 'zap'),
           filterChip('alert', 'Alertes', 'Alertes', '#F53B3B', 'triangle-alert'),
           todayChip,
+          blocusChip,
         ),
         h('button', { class: 'map-btn locate', type: 'button', 'aria-label': 'Me localiser', title: 'Me localiser', onclick: () => locateMe() }, icon('locate-fixed', 22)),
         h('div', { class: 'route-hint' }, icon('route', 16), h('span', { class: 'route-hint-text' }, 'Touche les panneaux pour les ajouter')),

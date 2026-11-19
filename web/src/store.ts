@@ -13,6 +13,8 @@ class Store {
   view: View = 'map';
   filters: Record<Group, boolean> = { fixe: true, event: true, flash: true, alert: true };
   todayOnly = false;
+  /** Vue « Blocus » : seulement les blocus et les blocages. */
+  blocusOnly = false;
   /** Points sélectionnés pour le trajet de collage. */
   routeSelection = new Set<string>();
   /** Ordre optimisé courant (ids). */
