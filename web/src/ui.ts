@@ -100,6 +100,8 @@ export function toast(msg: string, kind: ToastKind = 'info', ms = 3200, ico?: st
   // Notification cliquable : montre le point concerné, puis disparaît.
   if (onClick) t.addEventListener('click', () => { t.remove(); onClick(); });
   toastWrap.append(t);
+  // Pas plus de 3 notifications à l'écran : la plus ancienne laisse sa place.
+  while (toastWrap.children.length > 3) toastWrap.firstElementChild?.remove();
   requestAnimationFrame(() => t.classList.add('in'));
   setTimeout(() => {
     t.classList.remove('in');
