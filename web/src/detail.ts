@@ -4,7 +4,7 @@ import { openSheet, confirmSheet } from './sheet';
 import { editPoint, durLabel, chips, newPointFlow } from './forms';
 import { h, icon, clear, toast, rangeLabel, relative, dateLong, time, toTimeInput, toDateInput, fromInputs } from './ui';
 import {
-  TYPES, iconOf, canReportProblem, nextConfirmAt, STATUS_LABEL, STATUS_HINT, STATUSES, RECURRENCE_LABEL, PROBLEM_PRESETS, PROBLEM_DURATIONS,
+  TYPES, iconOf, canReportProblem, STATUS_LABEL, STATUS_HINT, STATUSES, RECURRENCE_LABEL, PROBLEM_PRESETS, PROBLEM_DURATIONS,
   type Point, type Problem,
 } from '../../shared/model';
 import { nextOccurrence, isActive, liveProblems } from '../../shared/time';
@@ -25,13 +25,21 @@ async function act(fn: () => Promise<{ point: Point }>, msg: string) {
  * Bouton « Toujours là » : grisé tant que les 15 min ne sont pas écoulées depuis le signalement
  * ou la dernière confirmation (le serveur applique la même règle).
  */
-function confirmButton(nextAt: number, size: string, ico: number, label: string, onConfirm: () => void) {
-  const wait = nextAt - Date.now();
-  if (wait > 0) {
-    return h('button', { class: `btn ${size} btn-light`, type: 'button', disabled: true, title: 'Une confirmation par tranche de 15 min' },
-      icon('timer', ico), `${label} · dans ${Math.ceil(wait / 60_000)} min`);
-  }
-  return h('button', { class: `btn ${size} btn-light`, type: 'button', onclick: onConfirm }, icon('timer', ico), label);
+function confirmButton(size: string, ico: number, fn: () => Promise<{ point: Point }>, okMsg: string) {
+  // Toujours cliquable. Si c'est trop tôt (moins de 15 min), le serveur refuse :
+  // on l'explique gentiment dans une notification, sans rien bloquer.
+  return h('button', { class: `btn ${size} btn-light`, type: 'button', onclick: async () => {
+    try {
+      const { point } = await fn();
+      store.upsert(point);
+      toast(okMsg, 'ok');
+      openDetail(point);
+    } catch (e) {
+      const err = e as ApiError;
+      if (err.status === 429) toast(err.message, 'info', 5000, 'timer');
+      else toast(err.message, 'err');
+    }
+  } }, icon('timer', ico), 'Toujours là !');
 }
 
 function problemCard(p: Point, pr: Problem) {
@@ -41,7 +49,7 @@ function problemCard(p: Point, pr: Problem) {
       `Signalé ${relative(pr.createdAt)}${pr.creatorName ? ` par ${pr.creatorName}` : ''} · expire ${relative(pr.expiresAt)}`),
     h('div', { class: 'problem-actions' },
       h('button', { class: 'btn btn-small btn-done', type: 'button', onclick: () => act(() => api.resolveProblem(pr.id), 'Problème marqué comme réglé') }, icon('check', 15), 'C\'est réglé'),
-      confirmButton(nextConfirmAt(pr), 'btn-small', 15, 'Toujours là', () => act(() => api.extendProblem(pr.id, 30), 'Problème prolongé de 30 min')),
+      confirmButton('btn-small', 15, () => api.extendProblem(pr.id, 30), 'Problème prolongé de 30 min'),
     ),
   );
 }
@@ -313,8 +321,7 @@ export function openDetail(p: Point) {
       toast(inRoute ? 'Retiré du trajet' : 'Ajouté au trajet de collage', 'ok');
       openDetail(p);
     } }, icon('route', 18), inRoute ? 'Retirer du trajet' : 'Ajouter au trajet') : null,
-    meta.alert ? confirmButton(nextConfirmAt(p), '', 18, `Toujours là (+${durLabel(30)})`,
-      () => act(() => api.extend(p.id, 30), 'Alerte prolongée de 30 min')) : null,
+    meta.alert ? confirmButton('', 18, () => api.extend(p.id, 30), 'Alerte prolongée de 30 min') : null,
     canEdit && p.mode === 'event' && !meta.alert && isActive(p) && (nextOccurrence(p)?.start ?? Infinity) <= Date.now() ? h('button', { class: 'btn btn-light', type: 'button', onclick: async () => {
       const held = p.type === 'blocus' ? store.points.filter((x) => x.parentId === p.id && x.status === 'tenu').length : 0;
       const more = held ? ` ${held > 1 ? `Les ${held} blocages encore tenus passeront` : 'Le blocage encore tenu passera'} à « sans personne ».` : '';

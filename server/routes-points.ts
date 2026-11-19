@@ -75,10 +75,9 @@ const problemDto = (r: ProblemRow): Problem => ({
 function confirmLocked(createdAt: number, confirmedAt: number | null): string | null {
   const wait = Math.max(createdAt, confirmedAt ?? 0) + CONFIRM_LOCK_MIN * 60_000 - Date.now();
   if (wait <= 0) return null;
-  const m = Math.ceil(wait / 60_000);
   return confirmedAt
-    ? `Déjà confirmé il y a moins de ${CONFIRM_LOCK_MIN} min : tu pourras le refaire dans ${m} min.`
-    : `Signalé il y a moins de ${CONFIRM_LOCK_MIN} min : tu pourras confirmer dans ${m} min.`;
+    ? 'Doucement : quelqu\'un vient déjà de confirmer que c\'est toujours là. Rien n\'a été rajouté.'
+    : 'Doucement : ça vient d\'être signalé, pas besoin de prolonger tout de suite. Rien n\'a été rajouté.';
 }
 const PROBLEM_SELECT = `SELECT pr.*, d.name AS creator_name FROM problems pr LEFT JOIN devices d ON d.id = pr.created_by
   WHERE pr.resolved_at IS NULL AND pr.expires_at > ?`;
