@@ -196,7 +196,9 @@ export function render() {
           h('button', { class: 'btn btn-outline', type: 'button', onclick: downloadGpx }, icon('download', 18), 'GPX'),
           h('button', { class: 'btn btn-outline', type: 'button', onclick: share }, icon('share-2', 18), 'Partager'),
         ),
-        nextStop(ordered) ? h('a', { class: 'btn btn-light btn-block', href: `https://waze.com/ul?ll=${ll(nextStop(ordered)!)}&navigate=yes`, target: '_blank', rel: 'noopener' }, icon('navigation', 18), `Prochain arrêt dans Waze : ${nextStop(ordered)!.title}`) : null,
+        nextStop(ordered) ? h('a', { class: 'btn btn-light btn-block btn-two', href: `https://waze.com/ul?ll=${ll(nextStop(ordered)!)}&navigate=yes`, target: '_blank', rel: 'noopener' },
+          icon('navigation', 18),
+          h('span', { class: 'btn-two-text' }, h('span', null, 'Prochain arrêt dans Waze'), h('small', null, nextStop(ordered)!.title))) : null,
         h('p', { class: 'field-hint' }, 'GPX : compatible Organic Maps, OsmAnd, Komoot, Garmin… Waze ne gère qu\'une destination à la fois.'),
       ),
     );

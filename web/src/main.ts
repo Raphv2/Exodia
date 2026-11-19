@@ -162,7 +162,7 @@ function startApp() {
           todayChip,
         ),
         h('button', { class: 'map-btn locate', type: 'button', 'aria-label': 'Me localiser', title: 'Me localiser', onclick: () => locateMe() }, icon('locate-fixed', 22)),
-        h('div', { class: 'route-hint' }, icon('route', 16), 'Touche les panneaux pour les ajouter au trajet'),
+        h('div', { class: 'route-hint' }, icon('route', 16), h('span', { class: 'route-hint-text' }, 'Touche les panneaux pour les ajouter')),
         h('div', { class: 'fabs' },
           h('button', { class: 'fab fab-warning', type: 'button', onclick: () => openAlertForm('warning') }, icon('triangle-alert', 20, 2.6), h('span', null, 'Warning')),
           h('button', { class: 'fab fab-danger', type: 'button', onclick: () => openAlertForm('danger') }, icon('siren', 20, 2.6), h('span', null, 'Danger')),
