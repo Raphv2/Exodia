@@ -74,3 +74,12 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS problems_point ON problems(point_id);
 `);
+
+// Migrations légères (ajout de colonnes sur une base existante).
+const cols = (table: string) => (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+if (!cols('points').includes('parent_id')) db.exec('ALTER TABLE points ADD COLUMN parent_id TEXT');
+if (!cols('points').includes('status_at')) db.exec('ALTER TABLE points ADD COLUMN status_at INTEGER');
+db.exec('CREATE INDEX IF NOT EXISTS points_parent ON points(parent_id)');
+// Les blocages étaient des événements : ce sont désormais des points fixes (la barricade reste en place).
+db.exec(`UPDATE points SET mode = 'fixe', starts_at = NULL, ends_at = NULL, recurrence = 'none', recurrence_until = NULL,
+         expires_at = NULL, status = COALESCE(status, 'vide') WHERE type = 'blocage' AND mode = 'event'`);

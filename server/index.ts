@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { csrf, ensureBootstrapAdmin, requireDevice } from './auth';
 import { access } from './routes-access';
-import { points, cleanup } from './routes-points';
+import { points, cleanup, releaseBlocages } from './routes-points';
 import { stream } from './events';
 
 const WEB_DIR = path.resolve('dist/web');
@@ -60,6 +60,7 @@ if (hasBuild) {
 
 cleanup();
 setInterval(cleanup, 3600_000).unref();
+setInterval(releaseBlocages, 60_000).unref();
 
 // HOST=127.0.0.1 en production : seul le reverse proxy (Caddy) peut joindre l'app.
 const onListen = () => {

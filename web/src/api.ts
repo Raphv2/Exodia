@@ -43,6 +43,7 @@ export const api = {
   createPoint: (p: PointInput) => req<{ point: Point }>('POST', '/points', p),
   updatePoint: (id: string, p: PointInput) => req<{ point: Point }>('PUT', `/points/${id}`, p),
   setStatus: (id: string, status: Point['status']) => req<{ point: Point }>('PATCH', `/points/${id}/status`, { status }),
+  setParent: (id: string, parentId: string | null) => req<{ point: Point }>('PATCH', `/points/${id}/parent`, { parentId }),
   extend: (id: string, minutes: number) => req<{ point: Point }>('POST', `/points/${id}/extend`, { minutes }),
   deletePoint: (id: string) => req('DELETE', `/points/${id}`),
   finish: (id: string) => req<{ point: Point }>('POST', `/points/${id}/finish`, {}),

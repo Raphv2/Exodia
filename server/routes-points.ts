@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { db, UPLOAD_DIR } from './db';
 import { newId, type DeviceRow } from './auth';
 import { broadcast } from './events';
-import { TYPES, TYPE_KEYS, type Point, type PointInput, type Problem } from '../shared/model';
+import { TYPES, TYPE_KEYS, STATUSES, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
+import { occurrences } from '../shared/time';
 
 export const points = Router();
 
@@ -15,7 +16,7 @@ interface PointRow {
   id: string; mode: Point['mode']; type: Point['type']; title: string; description: string | null;
   lat: number; lng: number; color: string | null; photo: string | null;
   starts_at: number | null; ends_at: number | null; recurrence: Point['recurrence']; recurrence_until: number | null;
-  expires_at: number | null; status: Point['status']; created_by: string; created_at: number; updated_at: number;
+  expires_at: number | null; status: Point['status']; status_at: number | null; parent_id: string | null; created_by: string; created_at: number; updated_at: number;
   creator_name?: string | null;
 }
 
@@ -25,6 +26,7 @@ const toDto = (r: PointRow, problems: Problem[] = []): Point => ({
   startsAt: r.starts_at, endsAt: r.ends_at, recurrence: r.recurrence, recurrenceUntil: r.recurrence_until,
   expiresAt: r.expires_at, status: r.status, createdBy: r.created_by, creatorName: r.creator_name ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at,
+  statusAt: r.status_at ?? null, parentId: r.parent_id ?? null,
   problems,
 });
 
@@ -76,10 +78,23 @@ const inputSchema = z.object({
   recurrence: z.enum(['none', 'daily', 'weekly', 'monthly']).default('none'),
   recurrenceUntil: z.number().int().nullish(),
   durationMinutes: z.number().int().min(5).max(24 * 60).optional(),
-  status: z.enum(['a_coller', 'colle', 'abime']).nullish(),
+  status: z.enum(['a_coller', 'colle', 'abime', 'tenu', 'vide', 'leve']).nullish(),
+  parentId: z.string().max(40).nullish(),
 });
 
-type Normalized = Omit<PointRow, 'id' | 'created_by' | 'created_at' | 'updated_at' | 'creator_name'>;
+/** L'état demandé est-il valable pour ce type de point ? */
+const validStatus = (type: Point['type'], status: unknown): status is PointStatus =>
+  !!STATUSES[type]?.includes(status as PointStatus);
+
+/** Le blocus auquel rattacher un blocage, ou un message d'erreur. */
+function blocusFor(parentId: string | null | undefined): { id: string | null } | string {
+  if (!parentId) return { id: null };
+  const parent = getPoint(parentId);
+  if (!parent || parent.type !== 'blocus') return 'Ce blocus n\'existe plus.';
+  return { id: parent.id };
+}
+
+type Normalized = Omit<PointRow, 'id' | 'created_by' | 'created_at' | 'updated_at' | 'creator_name' | 'status_at'>;
 
 /** Valide et normalise les règles métier (horaires, expiration, alertes). */
 function normalize(input: PointInput, existing?: PointRow): Normalized | string {
@@ -91,6 +106,7 @@ function normalize(input: PointInput, existing?: PointRow): Normalized | string 
   const base = {
     mode, type: input.type, title: input.title, description: input.description || null,
     lat: input.lat, lng: input.lng, color: input.color || null, photo: input.photo || null,
+    parent_id: null as string | null,
   };
 
   if (meta.alert) {
@@ -102,9 +118,16 @@ function normalize(input: PointInput, existing?: PointRow): Normalized | string 
   }
 
   if (mode === 'fixe') {
+    const statuses = STATUSES[input.type];
+    let parentId: string | null = null;
+    if (input.type === 'blocage') {
+      const b = blocusFor(input.parentId);
+      if (typeof b === 'string') return b;
+      parentId = b.id;
+    }
     return {
-      ...base, starts_at: null, ends_at: null, recurrence: 'none', recurrence_until: null, expires_at: null,
-      status: input.type === 'panneau' ? input.status ?? 'a_coller' : null,
+      ...base, parent_id: parentId, starts_at: null, ends_at: null, recurrence: 'none', recurrence_until: null, expires_at: null,
+      status: statuses ? (validStatus(input.type, input.status) ? input.status : statuses[0]) : null,
     };
   }
 
@@ -137,10 +160,10 @@ points.post('/points', (req, res) => {
   const id = newId();
   const now = Date.now();
   db.prepare(`INSERT INTO points (id, mode, type, title, description, lat, lng, color, photo, starts_at, ends_at,
-              recurrence, recurrence_until, expires_at, status, created_by, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+              recurrence, recurrence_until, expires_at, status, status_at, parent_id, created_by, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, n.mode, n.type, n.title, n.description, n.lat, n.lng, n.color, n.photo, n.starts_at, n.ends_at,
-      n.recurrence, n.recurrence_until, n.expires_at, n.status, req.device!.id, now, now);
+      n.recurrence, n.recurrence_until, n.expires_at, n.status, n.status ? now : null, n.parent_id, req.device!.id, now, now);
   broadcast('points', { id, by: req.device!.id, action: 'create', type: n.type });
   res.status(201).json({ point: pointDto(id)! });
 });
@@ -153,23 +176,39 @@ points.put('/points/:id', (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Données invalides' });
   const n = normalize(parsed.data, row);
   if (typeof n === 'string') return res.status(400).json({ error: n });
+  const now = Date.now();
+  const statusAt = n.status === row.status ? row.status_at : n.status ? now : null;
   db.prepare(`UPDATE points SET mode=?, type=?, title=?, description=?, lat=?, lng=?, color=?, photo=?, starts_at=?, ends_at=?,
-              recurrence=?, recurrence_until=?, expires_at=?, status=?, updated_at=? WHERE id=?`)
+              recurrence=?, recurrence_until=?, expires_at=?, status=?, status_at=?, parent_id=?, updated_at=? WHERE id=?`)
     .run(n.mode, n.type, n.title, n.description, n.lat, n.lng, n.color, n.photo, n.starts_at, n.ends_at,
-      n.recurrence, n.recurrence_until, n.expires_at, n.status, Date.now(), row.id);
+      n.recurrence, n.recurrence_until, n.expires_at, n.status, statusAt, n.parent_id, now, row.id);
+  if (row.type === 'blocus' && n.type !== 'blocus') db.prepare('UPDATE points SET parent_id = NULL WHERE parent_id = ?').run(row.id);
+  if (row.type === 'blocus') releaseBlocages();
   if (row.photo && row.photo !== n.photo) removePhoto(row.photo);
   broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
   res.json({ point: pointDto(row.id)! });
 });
 
-/** Statut d'un panneau : tout le monde peut le mettre à jour sur le terrain. */
+/** État d'un panneau ou d'un blocage : tout le monde peut le mettre à jour sur le terrain. */
 points.patch('/points/:id/status', (req, res) => {
-  const status = z.enum(['a_coller', 'colle', 'abime']).safeParse(req.body?.status);
-  if (!status.success) return res.status(400).json({ error: 'Statut invalide' });
-  const r = db.prepare("UPDATE points SET status = ?, updated_at = ? WHERE id = ? AND type = 'panneau'").run(status.data, Date.now(), req.params.id);
-  if (!r.changes) return res.status(404).json({ error: 'Panneau introuvable' });
-  broadcast('points', { id: req.params.id, by: req.device!.id, action: 'update' });
-  res.json({ point: pointDto(req.params.id)! });
+  const row = getPoint(req.params.id);
+  if (!row || !STATUSES[row.type]) return res.status(404).json({ error: 'Point introuvable' });
+  if (!validStatus(row.type, req.body?.status)) return res.status(400).json({ error: 'État invalide' });
+  const now = Date.now();
+  db.prepare('UPDATE points SET status = ?, status_at = ?, updated_at = ? WHERE id = ?').run(req.body.status, now, now, row.id);
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  res.json({ point: pointDto(row.id)! });
+});
+
+/** Rattacher un blocage à un blocus (ou le détacher) : tout le monde peut le faire sur le terrain. */
+points.patch('/points/:id/parent', (req, res) => {
+  const row = getPoint(req.params.id);
+  if (!row || row.type !== 'blocage') return res.status(404).json({ error: 'Blocage introuvable' });
+  const b = blocusFor(req.body?.parentId ?? null);
+  if (typeof b === 'string') return res.status(400).json({ error: b });
+  db.prepare('UPDATE points SET parent_id = ?, updated_at = ? WHERE id = ?').run(b.id, Date.now(), row.id);
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  res.json({ point: pointDto(row.id)! });
 });
 
 /** Prolonger une alerte : tout le monde peut confirmer qu'elle est toujours d'actualité. */
@@ -198,6 +237,7 @@ points.post('/points/:id/finish', (req, res) => {
     db.prepare('UPDATE points SET starts_at = ?, ends_at = ?, expires_at = ?, updated_at = ? WHERE id = ?').run(start, now, now, now, row.id);
   }
   db.prepare('UPDATE problems SET resolved_at = ?, resolved_by = ? WHERE point_id = ? AND resolved_at IS NULL').run(now, req.device!.id, row.id);
+  if (row.type === 'blocus') releaseBlocages();
   broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
   res.json({ point: pointDto(row.id)! });
 });
@@ -245,6 +285,7 @@ points.delete('/points/:id', (req, res) => {
   if (!row) return res.status(404).json({ error: 'Point introuvable' });
   if (!canEdit(req.device!, row)) return res.status(403).json({ error: 'Seul·e l\'auteur·rice ou un admin peut supprimer ce point.' });
   db.prepare('DELETE FROM points WHERE id = ?').run(row.id);
+  db.prepare('UPDATE points SET parent_id = NULL WHERE parent_id = ?').run(row.id);
   if (row.photo) removePhoto(row.photo);
   broadcast('points', { id: row.id, by: req.device!.id, action: 'delete' });
   res.json({ ok: true });
@@ -282,6 +323,37 @@ points.get('/photos/:name', (req, res) => {
     if (err && !res.headersSent) res.status(404).end();
   });
 });
+
+// ---------- Fin des blocus ----------
+
+/**
+ * Quand un blocus se termine (fin prévue ou « Terminer maintenant »), ses blocages encore « tenus »
+ * passent à « sans personne » : la barricade reste sur la carte, mais plus personne ne la tient.
+ * Un blocage marqué « tenu » après la fin du blocus n'est pas touché.
+ */
+export function releaseBlocages() {
+  const now = Date.now();
+  const rows = db.prepare(`SELECT id, status_at, parent_id FROM points
+    WHERE type = 'blocage' AND status = 'tenu' AND parent_id IS NOT NULL`).all() as unknown as { id: string; status_at: number | null; parent_id: string }[];
+  const parents = new Map<string, Point | null>();
+  const released: string[] = [];
+  for (const r of rows) {
+    if (!parents.has(r.parent_id)) {
+      const p = getPoint(r.parent_id);
+      parents.set(r.parent_id, p ? toDto(p) : null);
+    }
+    const parent = parents.get(r.parent_id);
+    if (!parent) continue;
+    const since = r.status_at ?? 0;
+    const ended = (t: number | null) => t != null && t > since && t <= now;
+    // Fin d'une occurrence, ou blocus arrêté plus tôt (« Terminer maintenant » sur un blocus répété).
+    if (ended(parent.expiresAt) || occurrences(parent, since, now).some((o) => ended(o.end))) released.push(r.id);
+  }
+  if (!released.length) return;
+  const upd = db.prepare("UPDATE points SET status = 'vide', status_at = ?, updated_at = ? WHERE id = ?");
+  for (const id of released) upd.run(now, now, id);
+  broadcast('points', { id: released[0], action: 'update' });
+}
 
 // ---------- Ménage périodique ----------
 

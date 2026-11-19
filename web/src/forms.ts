@@ -7,9 +7,10 @@ import {
   h, icon, clear, toast, toDateInput, toTimeInput, fromInputs, addDays, startOfDay, inkFor, isAllDay,
 } from './ui';
 import {
-  TYPES, TYPE_KEYS, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, ALERT_DURATIONS, ALERT_PRESETS,
-  type Mode, type PointType, type Recurrence, type PanneauStatus, type Point, type PointInput,
+  TYPES, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, STATUS_HINT, STATUSES, ALERT_DURATIONS, ALERT_PRESETS,
+  type Mode, type PointType, type Recurrence, type PointStatus, type Point, type PointInput,
 } from '../../shared/model';
+import { isActive, nextOccurrence } from '../../shared/time';
 
 // ---------- Petits composants de formulaire ----------
 
@@ -114,16 +115,28 @@ interface Draft {
   end: string;
   recurrence: Recurrence;
   until: string;
-  status: PanneauStatus;
+  status: PointStatus;
+  /** Blocage : blocus auquel il est rattaché. */
+  parentId: string | null;
   allDay: boolean;
   /** L'utilisateur a choisi lui-même « toute la journée » ou non. */
   allDayTouched: boolean;
 }
 
-const FORM_TYPES = TYPE_KEYS.filter((t) => !TYPES[t].alert);
-const EVENT_ORDER: PointType[] = ['rassemblement', 'blocage', 'tractage', 'ag', 'collage', 'materiel', 'local', 'autre'];
+const FIXE_ORDER: PointType[] = ['panneau', 'blocage', 'collage', 'materiel', 'local', 'autre'];
+const EVENT_ORDER: PointType[] = ['rassemblement', 'blocus', 'tractage', 'ag', 'collage', 'materiel', 'local', 'autre'];
 
-function draftFrom(p: Point | null, pos: Pos, mode: Mode = 'fixe'): Draft {
+/** Blocus pas encore terminés, celui en cours d'abord. */
+export function activeBlocus(): Point[] {
+  const now = Date.now();
+  return store.points
+    .filter((p) => p.type === 'blocus' && isActive(p, now))
+    .sort((a, b) => (nextOccurrence(a, now)?.start ?? Infinity) - (nextOccurrence(b, now)?.start ?? Infinity));
+}
+
+export interface Preset { type?: PointType; parentId?: string | null }
+
+function draftFrom(p: Point | null, pos: Pos, mode: Mode = 'fixe', preset: Preset = {}): Draft {
   const nextHour = new Date();
   nextHour.setMinutes(0, 0, 0);
   nextHour.setHours(nextHour.getHours() + 1);
@@ -135,7 +148,7 @@ function draftFrom(p: Point | null, pos: Pos, mode: Mode = 'fixe'): Draft {
     allDayTouched: !!p,
     id: p?.id,
     mode: p?.mode ?? mode,
-    type: p?.type ?? (mode === 'fixe' ? 'panneau' : 'tractage'),
+    type: p?.type ?? preset.type ?? (mode === 'fixe' ? 'panneau' : 'tractage'),
     title: p?.title ?? '',
     description: p?.description ?? '',
     lat: p?.lat ?? pos.lat,
@@ -148,13 +161,15 @@ function draftFrom(p: Point | null, pos: Pos, mode: Mode = 'fixe'): Draft {
     recurrence: p?.recurrence ?? 'none',
     until: p?.recurrenceUntil ? toDateInput(p.recurrenceUntil) : '',
     status: p?.status ?? 'a_coller',
+    parentId: p ? p.parentId : preset.parentId !== undefined ? preset.parentId : activeBlocus()[0]?.id ?? null,
   };
 }
 
-export async function newPointFlow(mode: Mode = 'fixe') {
-  const pos = await pickLocation({ title: 'Nouveau point', color: '#7B13D6' });
+export async function newPointFlow(mode: Mode = 'fixe', preset: Preset = {}) {
+  const color = preset.type ? TYPES[preset.type].color : '#7B13D6';
+  const pos = await pickLocation({ title: preset.type ? `Nouveau ${TYPES[preset.type].label.toLowerCase()}` : 'Nouveau point', color });
   if (!pos) return;
-  openPointForm(draftFrom(null, pos, mode));
+  openPointForm(draftFrom(null, pos, mode, preset));
 }
 
 export function editPoint(p: Point) {
@@ -168,8 +183,10 @@ function openPointForm(d: Draft) {
   const submit = h('button', { class: 'btn btn-primary btn-block', type: 'button' }, icon('check', 20), h('span', null, isEdit ? 'Enregistrer' : 'Ajouter le point')) as HTMLButtonElement;
 
   const render = () => {
-    const typesForMode = (d.mode === 'event' ? EVENT_ORDER : FORM_TYPES).filter((t) => TYPES[t].modes.includes(d.mode));
+    const typesForMode = (d.mode === 'event' ? EVENT_ORDER : FIXE_ORDER).filter((t) => TYPES[t].modes.includes(d.mode));
     if (!typesForMode.includes(d.type)) d.type = typesForMode[0];
+    const statuses = STATUSES[d.type];
+    if (statuses && !statuses.includes(d.status)) d.status = statuses[0];
     if (!d.allDayTouched) d.allDay = !!TYPES[d.type].allDay;
     const meta = TYPES[d.type];
     const color = d.color ?? TYPES[d.type].color;
@@ -206,7 +223,20 @@ function openPointForm(d: Draft) {
         : null,
     ) : null;
 
-    const status = d.type === 'panneau' ? group('État du panneau', chips((Object.keys(STATUS_LABEL) as PanneauStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] })), d.status, (v) => (d.status = v), color)) : null;
+    const status = statuses ? group(d.type === 'blocage' ? 'Sur place en ce moment' : 'État du panneau',
+      chips(statuses.map((s) => ({ value: s, label: STATUS_HINT[s] ? `${STATUS_LABEL[s]} · ${STATUS_HINT[s]}` : STATUS_LABEL[s] })), d.status, (v) => (d.status = v), color)) : null;
+
+    const blocusList = d.type === 'blocage' ? activeBlocus() : [];
+    // Garder le blocus déjà choisi même s'il est terminé (modification d'un ancien blocage).
+    const current = d.parentId ? store.points.find((x) => x.id === d.parentId) : null;
+    if (current && !blocusList.includes(current)) blocusList.unshift(current);
+    const blocus = d.type === 'blocage' ? h('div', { class: 'field' },
+      h('span', { class: 'field-label' }, 'Blocus', h('em', null, ' · facultatif')),
+      blocusList.length
+        ? chips<string>([...blocusList.map((b) => ({ value: b.id, label: b.title })), { value: '', label: 'Aucun' }], d.parentId ?? '', (v) => (d.parentId = v || null), color)
+        : h('p', { class: 'field-hint' }, 'Aucun blocus prévu pour l\'instant. Tu pourras rattacher ce blocage depuis la fiche d\'un blocus.'),
+      blocusList.length ? h('span', { class: 'field-hint' }, 'À la fin du blocus, s\'il est encore « tenu », le blocage passe tout seul à « sans personne ».') : null,
+    ) : null;
 
     const colors = h('div', { class: 'swatches' },
       [null, ...COLOR_CHOICES.filter((c) => c !== TYPES[d.type].color)].map((c) => h('button', {
@@ -224,6 +254,7 @@ function openPointForm(d: Draft) {
       field('Titre', title),
       schedule,
       status,
+      blocus,
       group('Photo', photoPicker(d.photo, () => {})),
       field('Description', desc, undefined, true),
       group('Couleur du point', colors),
@@ -243,7 +274,8 @@ function openPointForm(d: Draft) {
     if (!d.title.trim()) d.title = TYPES[d.type].label;
     const input: PointInput = {
       mode: d.mode, type: d.type, title: d.title.trim(), description: d.description.trim() || null,
-      lat: d.lat, lng: d.lng, color: d.color, status: d.type === 'panneau' ? d.status : null,
+      lat: d.lat, lng: d.lng, color: d.color, status: STATUSES[d.type] ? d.status : null,
+      parentId: d.type === 'blocage' ? d.parentId : null,
     };
     if (d.mode === 'event') {
       if (!d.date || (!d.allDay && (!d.start || !d.end))) return toast('Indique la date, l\'heure de début et de fin.', 'err');

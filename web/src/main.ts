@@ -68,7 +68,7 @@ function lockedScreen() {
 const step = (n: string, t: string) => h('div', { class: 'splash-step' }, h('span', null, n), h('p', null, t));
 
 function joinScreen(token: string) {
-  const input = h('input', { class: 'input input-big', type: 'text', maxlength: '40', placeholder: 'Ton prénom ou pseudo', autocomplete: 'nickname', required: true }) as HTMLInputElement;
+  const input = h('input', { class: 'input input-big', type: 'text', maxlength: '40', placeholder: 'Ton prénom ou pseudo', autocomplete: 'off', required: true }) as HTMLInputElement;
   const btn = h('button', { class: 'btn btn-yellow btn-big btn-block', type: 'submit' }, h('span', null, 'Rejoindre'), icon('arrow-right', 22)) as HTMLButtonElement;
   const form = h('form', { class: 'join-form', onsubmit: async (e: Event) => {
     e.preventDefault();

@@ -3,7 +3,7 @@ import {
   Crosshair, Download, Footprints, House, ImagePlus, Layers, LocateFixed, LogOut, Map as MapIcon, MapPin,
   Navigation, Newspaper, Package, PaintRoller, Pencil, Plus, Presentation, QrCode, Repeat, Route, Share2,
   ShieldCheck, Siren, Smartphone, Trash2, TriangleAlert, UserPlus, Users, UsersRound, X, ArrowRight, Timer,
-  CircleCheck, ListChecks, Construction, Megaphone, CircleAlert, Flag, Sun, type IconNode,
+  CircleCheck, ListChecks, Construction, Megaphone, CircleAlert, Flag, Sun, Flame, type IconNode,
 } from 'lucide';
 
 const ICONS: Record<string, IconNode> = {
@@ -16,7 +16,7 @@ const ICONS: Record<string, IconNode> = {
   'shield-check': ShieldCheck, siren: Siren, smartphone: Smartphone, 'trash-2': Trash2,
   'triangle-alert': TriangleAlert, 'user-plus': UserPlus, users: Users, 'users-round': UsersRound, x: X,
   'arrow-right': ArrowRight, timer: Timer, 'circle-check': CircleCheck, 'list-checks': ListChecks,
-  construction: Construction, megaphone: Megaphone, 'circle-alert': CircleAlert, flag: Flag, sun: Sun,
+  construction: Construction, megaphone: Megaphone, 'circle-alert': CircleAlert, flag: Flag, sun: Sun, flame: Flame,
 };
 
 export function icon(name: string, size = 20, stroke = 2.25): SVGElement {

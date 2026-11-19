@@ -4,9 +4,11 @@ export type Role = 'admin' | 'relais' | 'membre';
 export type Mode = 'fixe' | 'event';
 export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 export type PanneauStatus = 'a_coller' | 'colle' | 'abime';
+export type BlocageStatus = 'tenu' | 'vide' | 'leve';
+export type PointStatus = PanneauStatus | BlocageStatus;
 
 export const TYPE_KEYS = [
-  'panneau', 'collage', 'ag', 'tractage', 'rassemblement', 'blocage', 'materiel', 'local', 'autre', 'warning', 'danger',
+  'panneau', 'collage', 'ag', 'tractage', 'rassemblement', 'blocus', 'blocage', 'materiel', 'local', 'autre', 'warning', 'danger',
 ] as const;
 export type PointType = (typeof TYPE_KEYS)[number];
 
@@ -32,7 +34,8 @@ export const TYPES: Record<PointType, TypeMeta> = {
   ag:       { label: 'Assemblée générale', short: 'AG', color: '#E5007D', ink: '#fff', icon: 'users', modes: ['event'], placeholder: 'AG du groupe d\'action' },
   tractage: { label: 'Tractage', short: 'Tractage', color: '#FF7A00', ink: '#fff', icon: 'newspaper', modes: ['event'], placeholder: 'Tractage marché du dimanche' },
   rassemblement: { label: 'Rassemblement', short: 'Rassemblement', color: '#1F4FD1', ink: '#fff', icon: 'megaphone', modes: ['event'], placeholder: 'Rassemblement devant la mairie' },
-  blocage:  { label: 'Blocage', short: 'Blocage', color: '#8B1E3F', ink: '#fff', icon: 'construction', modes: ['event'], allDay: true, placeholder: 'Blocage rond-point nord' },
+  blocus:   { label: 'Blocus', short: 'Blocus', color: '#5C1033', ink: '#fff', icon: 'flame', modes: ['event'], placeholder: 'Blocus fac – RDV quai 43' },
+  blocage:  { label: 'Blocage', short: 'Blocage', color: '#8B1E3F', ink: '#fff', icon: 'construction', modes: ['fixe'], placeholder: 'Bâtiment A – entrée principale' },
   materiel: { label: 'Matériel', short: 'Matériel', color: '#0098B6', ink: '#fff', icon: 'package', modes: ['fixe', 'event'], placeholder: 'Matos : colle, tracts, poubelles…' },
   local:    { label: 'Local', short: 'Local', color: '#00232C', ink: '#fff', icon: 'house', modes: ['fixe', 'event'], placeholder: 'Local du groupe' },
   autre:    { label: 'Autre', short: 'Autre', color: '#5B6770', ink: '#fff', icon: 'map-pin', modes: ['fixe', 'event'], placeholder: 'Titre du point' },
@@ -61,10 +64,24 @@ export interface Problem {
   expiresAt: number;
 }
 
-export const STATUS_LABEL: Record<PanneauStatus, string> = {
+export const STATUS_LABEL: Record<PointStatus, string> = {
   a_coller: 'À coller',
   colle: 'Collé',
   abime: 'Abîmé / recouvert',
+  tenu: 'Tenu',
+  vide: 'Sans personne',
+  leve: 'Levé',
+};
+
+/** États possibles selon le type (tout le monde peut les changer sur le terrain). */
+export const STATUSES: Partial<Record<PointType, PointStatus[]>> = {
+  panneau: ['a_coller', 'colle', 'abime'],
+  blocage: ['tenu', 'vide', 'leve'],
+};
+export const STATUS_HINT: Partial<Record<PointStatus, string>> = {
+  tenu: 'Du monde sur place',
+  vide: 'Barricade seule',
+  leve: 'Barricade enlevée',
 };
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -99,11 +116,15 @@ export interface Point {
   recurrence: Recurrence;
   recurrenceUntil: number | null;
   expiresAt: number | null;
-  status: PanneauStatus | null;
+  status: PointStatus | null;
+  /** Dernier changement d'état (panneau, blocage). */
+  statusAt: number | null;
   createdBy: string;
   creatorName: string | null;
   createdAt: number;
   updatedAt: number;
+  /** Blocage : le blocus auquel il est rattaché. */
+  parentId: string | null;
   /** Problèmes en cours (non réglés, non expirés). */
   problems: Problem[];
 }
@@ -124,7 +145,9 @@ export interface PointInput {
   recurrenceUntil?: number | null;
   /** Pour warning / danger : durée de vie à partir de maintenant. */
   durationMinutes?: number;
-  status?: PanneauStatus | null;
+  status?: PointStatus | null;
+  /** Blocage : blocus auquel il est rattaché. À la fin du blocus, un blocage « tenu » passe à « sans personne ». */
+  parentId?: string | null;
 }
 
 export interface Device {

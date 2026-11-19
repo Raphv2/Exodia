@@ -78,7 +78,7 @@ function markerIcon(p: Point, extra: { cls?: string; badge?: string | null } = {
   const meta = TYPES[p.type];
   const color = colorOf(p);
   const ink = p.color ? inkFor(color) : meta.ink;
-  const cls = ['pin', meta.alert ? `pin-alert pin-${p.type}` : '', p.type === 'panneau' && p.status ? `pin-st-${p.status}` : '', extra.cls ?? ''].join(' ');
+  const cls = ['pin', meta.alert ? `pin-alert pin-${p.type}` : '', p.status ? `pin-st-${p.status}` : '', extra.cls ?? ''].join(' ');
   const html = `<div class="${cls}" style="--c:${color};--ink:${ink}"><div class="pin-head">${iconHtml(meta.icon, 18, 2.4)}</div>${extra.badge ? `<span class="pin-badge">${extra.badge}</span>` : ''}${p.photo ? '<span class="pin-photo"></span>' : ''}</div>`;
   return L.divIcon({ html, className: 'pin-wrap', iconSize: [36, 46], iconAnchor: [18, 42], tooltipAnchor: [0, -38] });
 }
