@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db, UPLOAD_DIR } from './db';
 import { newId, type DeviceRow } from './auth';
 import { broadcast } from './events';
-import { TYPES, TYPE_KEYS, STATUSES, BLOCUS_COLORS, canReportProblem, type Person, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
+import { TYPES, TYPE_KEYS, STATUSES, BLOCUS_COLORS, canReportProblem, type Participant, type Person, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
 import { occurrences } from '../shared/time';
 
 export const points = Router();
@@ -20,21 +20,21 @@ interface PointRow {
   creator_name?: string | null;
 }
 
-interface Pledges { participants: Person[]; providers: Record<string, Person[]> }
+interface Pledges { participants: Participant[]; providers: Record<string, Person[]> }
 const NO_PLEDGES: Pledges = { participants: [], providers: {} };
 
 /** Qui participe et qui fournit quoi, par point (appareils retirés exclus). */
 function pledgesFor(pointId?: string): Map<string, Pledges> {
-  const sql = `SELECT pl.point_id, pl.kind, pl.item, d.id AS device_id, d.name FROM pledges pl
+  const sql = `SELECT pl.point_id, pl.kind, pl.item, pl.arrive_at, d.id AS device_id, d.name FROM pledges pl
     JOIN devices d ON d.id = pl.device_id AND d.revoked_at IS NULL ${pointId ? 'WHERE pl.point_id = ?' : ''} ORDER BY pl.created_at`;
   const rows = (pointId ? db.prepare(sql).all(pointId) : db.prepare(sql).all()) as unknown as
-    { point_id: string; kind: string; item: string; device_id: string; name: string }[];
+    { point_id: string; kind: string; item: string; arrive_at: number | null; device_id: string; name: string }[];
   const map = new Map<string, Pledges>();
   for (const r of rows) {
     if (!map.has(r.point_id)) map.set(r.point_id, { participants: [], providers: {} });
     const pl = map.get(r.point_id)!;
     const who = { id: r.device_id, name: r.name };
-    if (r.kind === 'participe') pl.participants.push(who);
+    if (r.kind === 'participe') pl.participants.push({ ...who, arriveAt: r.arrive_at ?? null });
     else (pl.providers[r.item] ??= []).push(who);
   }
   return map;
@@ -287,14 +287,24 @@ points.post('/points/:id/finish', (req, res) => {
   res.json({ point: pointDto(row.id)! });
 });
 
-/** « Je participe » / « je ne participe plus » : chacun pour soi. */
+/**
+ * « Je participe » / « je ne participe plus » : chacun pour soi.
+ * `arriveAt` (blocus) : heure d'arrivée prévue si on ne vient pas dès le RDV ; null = au RDV.
+ */
 points.post('/points/:id/participate', (req, res) => {
-  const on = z.boolean().safeParse(req.body?.on);
-  if (!on.success) return res.status(400).json({ error: 'Requête invalide' });
+  const body = z.object({ on: z.boolean(), arriveAt: z.number().int().nullish() }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'Requête invalide' });
   const row = getPoint(req.params.id);
   if (!row || row.mode !== 'event' || TYPES[row.type].alert) return res.status(404).json({ error: 'Événement introuvable' });
-  if (on.data) db.prepare("INSERT OR IGNORE INTO pledges (point_id, device_id, kind, item, created_at) VALUES (?, ?, 'participe', '', ?)").run(row.id, req.device!.id, Date.now());
-  else db.prepare("DELETE FROM pledges WHERE point_id = ? AND device_id = ? AND kind = 'participe'").run(row.id, req.device!.id);
+  const arriveAt = body.data.arriveAt ?? null;
+  if (arriveAt != null && (arriveAt < Date.now() - 86400_000 || arriveAt > Date.now() + 400 * 86400_000)) {
+    return res.status(400).json({ error: 'Heure d\'arrivée invalide' });
+  }
+  if (body.data.on) {
+    db.prepare(`INSERT INTO pledges (point_id, device_id, kind, item, arrive_at, created_at) VALUES (?, ?, 'participe', '', ?, ?)
+                ON CONFLICT (point_id, device_id, kind, item) DO UPDATE SET arrive_at = excluded.arrive_at`)
+      .run(row.id, req.device!.id, arriveAt, Date.now());
+  } else db.prepare("DELETE FROM pledges WHERE point_id = ? AND device_id = ? AND kind = 'participe'").run(row.id, req.device!.id);
   broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
   res.json({ point: pointDto(row.id)! });
 });

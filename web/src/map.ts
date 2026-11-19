@@ -74,11 +74,21 @@ export function fitToPoints() {
   map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng] as [number, number])).pad(0.2), { maxZoom: 16 });
 }
 
+/** Ce que j'ai promis sur ce point : venir, et/ou fournir du matériel (visible par moi seul). */
+function myPledge(p: Point): 'going' | 'providing' | null {
+  const me = store.me?.id;
+  if (!me) return null;
+  if (p.participants?.some((x) => x.id === me)) return 'going';
+  if (Object.values(p.providers ?? {}).some((list) => list.some((x) => x.id === me))) return 'providing';
+  return null;
+}
+
 function markerIcon(p: Point, extra: { cls?: string; badge?: string | null } = {}) {
   const meta = TYPES[p.type];
   const { color, ink } = paintOf(p);
-  const cls = ['pin', meta.alert ? `pin-alert pin-${p.type}` : '', p.status ? `pin-st-${p.status}` : '', extra.cls ?? ''].join(' ');
-  const html = `<div class="${cls}" style="--c:${color};--ink:${ink}"><div class="pin-head">${iconHtml(iconOf(p), 18, 2.4)}</div>${extra.badge ? `<span class="pin-badge">${extra.badge}</span>` : ''}${p.photo ? '<span class="pin-photo"></span>' : ''}</div>`;
+  const mine = myPledge(p);
+  const cls = ['pin', mine ? `pin-${mine}` : '', meta.alert ? `pin-alert pin-${p.type}` : '', p.status ? `pin-st-${p.status}` : '', extra.cls ?? ''].join(' ');
+  const html = `<div class="${cls}" style="--c:${color};--ink:${ink}"><div class="pin-head">${iconHtml(iconOf(p), 18, 2.4)}</div>${extra.badge ? `<span class="pin-badge">${extra.badge}</span>` : ''}${p.photo ? '<span class="pin-photo"></span>' : ''}${mine ? `<span class="pin-me" title="${mine === 'going' ? 'Tu y participes' : 'Tu fournis du matériel'}">${iconHtml(mine === 'going' ? 'check' : 'package', 12, 3)}</span>` : ''}</div>`;
   return L.divIcon({ html, className: 'pin-wrap', iconSize: [36, 46], iconAnchor: [18, 42], tooltipAnchor: [0, -38] });
 }
 
@@ -107,7 +117,9 @@ export function renderMarkers() {
       keyboard: true,
       title: p.title,
     });
-    m.bindTooltip(h('span', null, problems.length ? `⚠ ${problems[0].message} · ${p.title}` : p.title), { direction: 'top', className: 'pin-tip' });
+    const mine = myPledge(p);
+    const label = problems.length ? `⚠ ${problems[0].message} · ${p.title}` : p.title;
+    m.bindTooltip(h('span', null, mine === 'going' ? `✓ Tu y vas · ${label}` : mine === 'providing' ? `Tu fournis du matos · ${label}` : label), { direction: 'top', className: 'pin-tip' });
     m.on('click', () => onPick(p));
     markers.addLayer(m);
   }

@@ -2,7 +2,7 @@ import { api, photoUrl, ApiError } from './api';
 import { store, paintOf } from './store';
 import { openSheet, confirmSheet } from './sheet';
 import { editPoint, durLabel, chips, newPointFlow } from './forms';
-import { h, icon, clear, toast, rangeLabel, relative, dateLong } from './ui';
+import { h, icon, clear, toast, rangeLabel, relative, dateLong, time, toTimeInput, toDateInput, fromInputs } from './ui';
 import {
   TYPES, iconOf, canReportProblem, STATUS_LABEL, STATUS_HINT, STATUSES, RECURRENCE_LABEL, PROBLEM_PRESETS, PROBLEM_DURATIONS,
   type Point, type Problem,
@@ -112,18 +112,68 @@ function openAttachSheet(blocus: Point) {
 const names = (people: { name: string }[]) =>
   people.length <= 3 ? people.map((x) => x.name).join(', ') : `${people.slice(0, 3).map((x) => x.name).join(', ')} +${people.length - 3}`;
 
+/** Blocus : on vient dès le RDV, ou plus tard (avec une heure). */
+function openArrivalSheet(p: Point) {
+  const occ = nextOccurrence(p);
+  const start = occ?.start ?? p.startsAt ?? Date.now();
+  const mine = p.participants.find((x) => x.id === store.me.id);
+  const later = mine?.arriveAt ?? start + 3600_000;
+  const input = h('input', { class: 'input', type: 'time', step: '300', value: toTimeInput(later) }) as HTMLInputElement;
+  const send = (arriveAt: number | null, msg: string) => { s.close(); act(() => api.participate(p.id, true, arriveAt), msg); };
+  const s = openSheet({
+    title: 'Tu viens quand ?',
+    accent: paintOf(p).color,
+    body: h('div', { class: 'form' },
+      h('p', { class: 'muted' }, `« ${p.title} » · RDV à ${time(start)}`),
+      h('button', { class: `btn btn-primary btn-block${mine && mine.arriveAt == null ? ' is-current' : ''}`, type: 'button',
+        onclick: () => send(null, `Noté : tu viens au RDV de ${time(start)}`) }, icon('clock', 18), `Au RDV · ${time(start)}`),
+      h('div', { class: 'card-section arrive-later' },
+        h('span', { class: 'field-label' }, 'Plus tard, vers'),
+        h('div', { class: 'material-add' }, input,
+          h('button', { class: 'btn btn-outline', type: 'button', onclick: () => {
+            if (!input.value) return toast('Indique une heure.', 'err');
+            let t = fromInputs(toDateInput(start), input.value);
+            if (t < start) t += 86400_000; // ex. RDV à 23 h, arrivée à 1 h
+            send(t, `Noté : tu arrives vers ${time(t)}`);
+          } }, 'Valider')),
+      ),
+      mine ? h('button', { class: 'btn btn-light btn-text-danger btn-block', type: 'button',
+        onclick: () => { s.close(); act(() => api.participate(p.id, false), 'Tu ne participes plus'); } }, 'Je ne viens plus') : null,
+    ),
+  });
+}
+
+/** Liste des participant·es ; pour un blocus, séparée entre RDV et arrivées plus tard. */
+function participantsText(p: Point) {
+  if (!p.participants.length) return 'Personne pour l\'instant';
+  if (p.type !== 'blocus') return names(p.participants);
+  const atRdv = p.participants.filter((x) => x.arriveAt == null);
+  const later = p.participants.filter((x) => x.arriveAt != null).sort((a, b) => a.arriveAt! - b.arriveAt!);
+  return [
+    atRdv.length ? `Au RDV : ${names(atRdv)}` : null,
+    later.length ? `Plus tard : ${later.map((x) => `${x.name} (${time(x.arriveAt!)})`).join(', ')}` : null,
+  ].filter(Boolean).join(' · ');
+}
+
 /** Qui vient, et qui fournit quoi. Fournir du matériel n'oblige pas à venir. */
 function pledgeSection(p: Point) {
   const me = store.me.id;
-  const going = p.participants.some((x) => x.id === me);
+  const mine = p.participants.find((x) => x.id === me);
+  const going = !!mine;
+  const blocus = p.type === 'blocus';
+  const label = !going ? 'Je participe ?'
+    : blocus ? (mine.arriveAt == null ? 'Je viens au RDV' : `J'arrive vers ${time(mine.arriveAt)}`)
+    : 'Je participe';
   return h('div', { class: 'card-section pledges' },
     h('div', { class: 'pledge-head' },
       h('div', null,
         h('div', { class: 'section-title' }, icon('users', 18), `Qui vient ? (${p.participants.length})`),
-        h('span', { class: 'field-hint' }, p.participants.length ? names(p.participants) : 'Personne pour l\'instant')),
+        h('span', { class: 'field-hint' }, participantsText(p))),
       h('button', { class: `btn btn-small ${going ? 'btn-done' : 'btn-primary'}`, type: 'button',
-        onclick: () => act(() => api.participate(p.id, !going), going ? 'Tu ne participes plus' : 'Noté : tu participes') },
-        going ? icon('check', 15) : null, going ? 'Je participe' : 'Je participe ?'),
+        onclick: () => blocus ? openArrivalSheet(p)
+          : act(() => api.participate(p.id, !going), going ? 'Tu ne participes plus' : 'Noté : tu participes') },
+        going ? icon('check', 15) : null, label),
+      blocus && going ? h('span', { class: 'field-hint' }, 'Touche le bouton pour changer ton heure ou te désinscrire.') : null,
     ),
     p.material.length ? h('div', { class: 'material' },
       h('div', { class: 'section-title' }, icon('package', 18), 'Matériel'),

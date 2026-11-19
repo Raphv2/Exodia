@@ -8,6 +8,9 @@ import { ROLE_LABEL, type CreatedInvite, type Device, type Invite, type Role } f
 let root: HTMLElement;
 let devices: Device[] = [];
 let invites: Invite[] = [];
+/** Recherche et filtre de la liste des appareils (gardés d'un affichage à l'autre). */
+let devQuery = '';
+let devRole: Role | 'all' = 'all';
 
 export function mountTeam(el: HTMLElement) {
   root = el;
@@ -66,10 +69,7 @@ function render() {
       ))) : h('p', { class: 'muted' }, 'Aucune invitation en cours.'),
     ) : null,
 
-    me.role === 'admin' ? h('section', { class: 'card-section' },
-      h('div', { class: 'section-title' }, icon('users', 18), `Appareils autorisés (${devices.length})`),
-      h('ul', { class: 'rows' }, devices.map(deviceRow)),
-    ) : null,
+    me.role === 'admin' ? devicesSection() : null,
 
     h('section', { class: 'card-section' },
       h('div', { class: 'section-title' }, icon('smartphone', 18), 'Cet appareil'),
@@ -162,6 +162,38 @@ function showInvite(res: CreatedInvite) {
   });
 }
 
+const norm = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/** Liste des appareils, avec recherche (nom, ou nom de la personne qui a invité) et filtre par rôle. */
+function devicesSection() {
+  const list = h('ul', { class: 'rows' });
+  const count = h('span', { class: 'field-hint' });
+  const count0 = (r: Role) => devices.filter((d) => d.role === r).length;
+  const renderList = () => {
+    const q = norm(devQuery.trim());
+    const shown = devices.filter((d) => (devRole === 'all' || d.role === devRole)
+      && (!q || norm(d.name).includes(q) || norm(d.invitedByName ?? '').includes(q)));
+    clear(list, ...(shown.length ? shown.map(deviceRow) : [h('p', { class: 'muted' }, 'Personne ne correspond.')]));
+    count.textContent = shown.length === devices.length ? '' : `${shown.length} sur ${devices.length}`;
+  };
+  const search = h('input', {
+    class: 'input', type: 'search', value: devQuery, placeholder: 'Chercher un prénom…', autocomplete: 'off',
+    oninput: (e: Event) => { devQuery = (e.target as HTMLInputElement).value; renderList(); },
+  });
+  const filter = chips<Role | 'all'>([
+    { value: 'all', label: `Tous (${devices.length})` },
+    { value: 'admin', label: `Admins (${count0('admin')})` },
+    { value: 'relais', label: `Relais (${count0('relais')})` },
+    { value: 'membre', label: `Membres (${count0('membre')})` },
+  ], devRole, (v) => { devRole = v; renderList(); });
+  renderList();
+  return h('section', { class: 'card-section' },
+    h('div', { class: 'section-title' }, icon('users', 18), `Appareils autorisés (${devices.length})`),
+    devices.length > 5 ? h('div', { class: 'dev-tools' }, search, filter, count) : null,
+    list,
+  );
+}
+
 function deviceRow(d: Device) {
   const isMe = d.id === store.me.id;
   return h('li', { class: 'row' },
@@ -177,6 +209,16 @@ function manageDevice(d: Device) {
   let role = d.role;
   let cascade = false;
   const children = devices.filter((x) => x.invitedBy === d.id).length;
+  // Le dernier admin ne peut être ni rétrogradé ni retiré : on ne propose pas ces actions.
+  const lastAdmin = d.role === 'admin' && devices.filter((x) => x.role === 'admin').length <= 1;
+  if (lastAdmin) {
+    openSheet({
+      title: d.name,
+      body: h('div', { class: 'form' },
+        h('p', { class: 'muted' }, 'C\'est le seul admin : il ne peut pas être rétrogradé ni retiré. Nomme d\'abord un autre admin si besoin.')),
+    });
+    return;
+  }
   const s = openSheet({
     title: d.name,
     body: h('div', { class: 'form' },

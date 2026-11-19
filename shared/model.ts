@@ -86,6 +86,8 @@ export const PROBLEM_DURATIONS = [30, 60, 120, 240] as const;
 export const PROBLEM_PRESETS = ['Barricade enlevée', 'Des gens dans le bâtiment', 'Manque de monde', 'Besoin de matériel'];
 
 export interface Person { id: string; name: string }
+/** Blocus : `arriveAt` = heure d'arrivée prévue si on ne vient pas dès le RDV (null = au RDV). */
+export interface Participant extends Person { arriveAt: number | null }
 
 export interface Problem {
   id: string;
@@ -163,7 +165,7 @@ export interface Point {
   /** Événement : matériel à prévoir. */
   material: string[];
   /** Événement : qui a dit venir. */
-  participants: Person[];
+  participants: Participant[];
   /** Événement : qui fournit quoi (clé = élément de `material`). Fournir n'oblige pas à venir. */
   providers: Record<string, Person[]>;
   /** Problèmes en cours (non réglés, non expirés). */
