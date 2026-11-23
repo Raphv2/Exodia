@@ -1,4 +1,4 @@
-import type { CreatedInvite, Device, Invite, Point, PointInput, Role, Space } from '../../shared/model';
+import type { CreatedInvite, Device, Invite, Point, PointInput, Role, Space, Vote, VoteResult } from '../../shared/model';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -38,6 +38,17 @@ export const api = {
   rename: (name: string) => req('PATCH', '/me', { name }),
   claim: (token: string, name: string) => req<{ device: Device }>('POST', '/auth/claim', { token, name }),
   logout: () => req('POST', '/auth/logout', {}),
+
+  // Votes en AG
+  votes: (pointId: string) => req<{ votes: Vote[]; canRun: boolean }>('GET', `/points/${pointId}/votes`),
+  createVote: (pointId: string, question: string, options: string[]) => req<{ vote: Vote }>('POST', `/points/${pointId}/votes`, { question, options }),
+  vote: (id: string) => req<{ vote: Vote }>('GET', `/votes/${id}`),
+  closeVote: (id: string) => req<{ vote: Vote }>('POST', `/votes/${id}/close`, {}),
+  ballot: (id: string, choice: number, pos: { lat: number; lng: number; accuracy?: number }) => req<{ vote: Vote }>('POST', `/votes/${id}/ballot`, { choice, ...pos }),
+  // Vote public (sans l'app)
+  lookupVote: (code: string, pos: { lat: number; lng: number; accuracy?: number }) => req<{ vote: Vote; agTitle: string }>('POST', '/public/votes/lookup', { code, ...pos }),
+  publicBallot: (code: string, choice: number, pos: { lat: number; lng: number; accuracy?: number }) => req<{ vote: Vote }>('POST', '/public/votes/ballot', { code, choice, ...pos }),
+  voteResult: (id: string) => req<{ result: VoteResult }>('GET', `/public/votes/${id}/result`),
 
   points: () => req<{ points: Point[] }>('GET', '/points'),
   createPoint: (p: PointInput) => req<{ point: Point }>('POST', '/points', p),

@@ -1062,3 +1062,61 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 @media (max-width: 360px) {
   .topbar:has(.space-switch) .brand-text { display: none; }
 }
+
+/* ==========================================================================
+   Votes en AG (façon Kahoot)
+   ========================================================================== */
+.votes { display: flex; flex-direction: column; gap: 10px; }
+.vote-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.vote-item { background: #fff; border: 2px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.vote-item.open { border-color: var(--violet); }
+.vote-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.vote-status { flex: none; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.vote-status.open { background: var(--violet); color: #fff; }
+.vote-status.closed { background: var(--line); color: var(--ink-soft); }
+.vote-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.vote-done { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--green); font-size: 14px; }
+.vote-total { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; color: var(--ink-soft); }
+.vote-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.vote-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'label num' 'track track'; gap: 2px 8px; }
+.vote-bar-label { grid-area: label; display: inline-flex; align-items: center; gap: 4px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vote-bar-num { grid-area: num; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.vote-bar-track { grid-area: track; height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.vote-bar-fill { display: block; height: 100%; background: var(--ink-soft); border-radius: 999px; transition: width 0.4s; }
+.vote-bar.top .vote-bar-fill { background: var(--violet); }
+.vote-bar.mine .vote-bar-label { color: var(--violet); }
+.vote-options-edit { display: flex; flex-direction: column; gap: 6px; }
+.vote-option-edit { display: flex; align-items: center; gap: 6px; }
+.vote-choices { display: flex; flex-direction: column; gap: 8px; }
+.vote-choice { justify-content: center; min-height: 52px; font-size: 19px; }
+
+/* Écran façon Kahoot : le code en très grand */
+.kahoot { display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.kahoot-question { margin: 0; font-family: var(--font-title); font-size: 26px; line-height: 1.1; text-transform: uppercase; }
+.kahoot-code { display: flex; justify-content: center; gap: 8px; }
+.kahoot-code span {
+  display: grid; place-items: center; width: min(16vw, 72px); height: min(20vw, 92px);
+  background: var(--ink); color: #fff; border-radius: var(--r-lg);
+  font-family: var(--font-title); font-weight: 800; font-size: min(13vw, 64px); font-variant-numeric: tabular-nums;
+}
+.kahoot-hint { margin: 0; color: var(--muted); font-size: 14px; }
+.kahoot-total { margin: 0; font-size: 18px; }
+.kahoot-total strong { font-family: var(--font-title); font-size: 34px; }
+.kahoot .vote-bars { text-align: left; }
+.kahoot-footer { width: 100%; }
+
+/* Page publique : voter avec le code */
+.btn-outline-light { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,0.6); }
+.btn-outline-light:hover { background: rgba(255,255,255,0.08); }
+.pv { display: flex; flex-direction: column; gap: 18px; }
+.pv-code { text-align: center; letter-spacing: 0.45em; font-size: 32px !important; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pv-error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; background: rgba(245,59,59,0.18); border-left: 4px solid #f53b3b; border-radius: 4px; }
+.pv-ag { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.75; font-weight: 700; }
+.pv-question { font-size: clamp(30px, 8vw, 44px); }
+.pv-choices { display: flex; flex-direction: column; gap: 10px; }
+.pv-back { color: #fff; opacity: 0.8; align-self: center; }
+.pv-result .vote-bars { color: #fff; }
+.pv-result .vote-bar-num { color: rgba(255,255,255,0.75); }
+.pv-result .vote-bar-track { background: rgba(255,255,255,0.18); }
+.pv-result .vote-bar-fill { background: rgba(255,255,255,0.6); }
+.pv-result .vote-bar.top .vote-bar-fill { background: #fff; }

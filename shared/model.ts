@@ -291,6 +291,27 @@ export interface CreatedInvite {
   qrSvg: string;
 }
 
+/** Vote en AG (façon Kahoot : un code à 5 chiffres, un vote par appareil, sur place). */
+export interface Vote {
+  id: string;
+  pointId: string;
+  question: string;
+  options: string[];
+  status: 'open' | 'closed';
+  /** Rayon (m) autour de l'AG pour pouvoir voter. */
+  radius: number;
+  /** Code à 5 chiffres : seulement pour l'organisation, tant que le vote est ouvert. */
+  code: string | null;
+  total: number;
+  /** Résultats par choix : pour l'organisation en direct, pour tous une fois clos. */
+  counts: number[] | null;
+  /** Mon choix, si j'ai déjà voté. */
+  myChoice: number | null;
+  createdAt: number;
+  closedAt: number | null;
+}
+export interface VoteResult { id: string; status: 'open' | 'closed'; question: string; options: string[]; counts: number[] | null }
+
 export const colorOf = (p: Pick<Point, 'type' | 'color'>) => p.color ?? TYPES[p.type].color;
 
 /**

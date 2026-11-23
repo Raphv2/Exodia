@@ -23,6 +23,7 @@ import { mountAgenda } from './agenda';
 import { mountRoute, toggleInRoute } from './route';
 import { mountTeam } from './team';
 import { openSheet } from './sheet';
+import { publicVotePage } from './votes';
 import { h, icon, toast, isDesktop, time } from './ui';
 import { quietPosition, walkMinutes } from './geo';
 import { chips } from './forms';
@@ -33,6 +34,8 @@ const app = document.getElementById('app')!;
 // ---------- Démarrage ----------
 
 async function boot() {
+  // Page publique « J'ai un code de vote » : accessible sans compte.
+  if (location.hash === '#/vote') return voteScreen();
   const join = location.hash.match(/^#\/join\/([A-Za-z0-9_-]{20,100})$/);
   let me = null;
   try {
@@ -72,7 +75,14 @@ function lockedScreen() {
       step('2', 'Tu le scannes avec ton téléphone'),
       step('3', 'Tu indiques ton prénom : c\'est parti'),
     ),
+    h('button', { class: 'btn btn-outline-light btn-block', type: 'button', onclick: () => { location.hash = '#/vote'; voteScreen(); } },
+      icon('vote', 20), 'J\'ai un code de vote'),
   );
+}
+
+/** Voter avec un code à 5 chiffres, sans compte (sur place uniquement). */
+function voteScreen() {
+  splash(publicVotePage(() => { history.replaceState(null, '', location.pathname); location.reload(); }));
 }
 
 const step = (n: string, t: string) => h('div', { class: 'splash-step' }, h('span', null, n), h('p', null, t));
@@ -286,6 +296,8 @@ function connectStream() {
       }
     })();
   });
+  // Votes : participation et résultats en direct.
+  es.addEventListener('votes', () => store.emit('votes'));
   es.addEventListener('revoked', () => location.reload());
 }
 

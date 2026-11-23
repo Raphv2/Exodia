@@ -8,6 +8,7 @@ import {
   type Point, type Problem,
 } from '../../shared/model';
 import { nextOccurrence, isActive, liveProblems } from '../../shared/time';
+import { votesSection } from './votes';
 import { getPosition, lastPosition, distance, fmtDistance, type Pos } from './geo';
 
 async function act(fn: () => Promise<{ point: Point }>, msg: string) {
@@ -373,6 +374,8 @@ export function openDetail(p: Point) {
     blocusSection,
     p.description ? h('p', { class: 'detail-desc' }, p.description) : null,
     p.mode === 'event' && !meta.alert ? pledgeSection(p) : null,
+    // AG : votes façon Kahoot (code à 5 chiffres, sur place).
+    p.type === 'ag' ? votesSection(p) : null,
     // Un problème n'a de sens que sur un lieu tenu (blocage) : ailleurs, il ne dit pas où aller.
     !canReportProblem(p.type) ? null : h('button', { class: 'btn btn-outline-danger btn-block', type: 'button', onclick: () => { sheet.close(); openProblemForm(p); } },
       icon('circle-alert', 18), 'Signaler un problème ici'),
