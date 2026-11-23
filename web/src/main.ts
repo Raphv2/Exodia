@@ -24,7 +24,8 @@ import { mountRoute, toggleInRoute } from './route';
 import { mountTeam } from './team';
 import { openSheet } from './sheet';
 import { publicVotePage } from './votes';
-import { mountArchive, publicArchivePage } from './archive';
+import { mountArchive } from './archive';
+import { publicHome } from './home';
 import { mountChat } from './chat';
 import { h, icon, toast, isDesktop, time } from './ui';
 import { quietPosition, walkMinutes } from './geo';
@@ -69,28 +70,18 @@ function splash(...children: Node[]) {
   app.replaceChildren(h('div', { class: 'splash' }, h('div', { class: 'splash-inner' }, brand(true), ...children)));
 }
 
+/** Page d'accueil publique : votes ouverts à tous, prochaines AG, archive publique ; accès membres en haut. */
 function lockedScreen() {
-  splash(
-    h('h1', { class: 'splash-title' }, 'Accès sur invitation'),
-    h('p', { class: 'splash-text' }, 'Cette app est privée. Pour entrer, demande à une personne qui y a déjà accès de te montrer son QR code, puis scanne-le avec l\'appareil photo de ton téléphone.'),
-    h('div', { class: 'splash-steps' },
-      step('1', 'Une personne du groupe génère un QR code'),
-      step('2', 'Tu le scannes avec ton téléphone'),
-      step('3', 'Tu indiques ton prénom : c\'est parti'),
-    ),
-    h('div', { class: 'splash-public' },
-      h('button', { class: 'btn btn-outline-light btn-block', type: 'button', onclick: () => { location.hash = '#/vote'; voteScreen(); } },
-        icon('vote', 20), 'J\'ai un code de vote'),
-      h('button', { class: 'btn btn-outline-light btn-block', type: 'button', onclick: () => { location.hash = '#/public'; publicScreen(); } },
-        icon('archive', 20), 'Archive publique et AG'),
-    ),
-  );
+  // La vitrine publique prend le style du côté Mouvement (les écrans d'accès restent neutres).
+  document.documentElement.dataset.space = 'mvt';
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#1b1b1b');
+  app.replaceChildren(publicHome(brand(false, 'mvt'), { onCode: () => { delete document.documentElement.dataset.space; location.hash = '#/vote'; voteScreen(); } }));
 }
 
-/** Sans compte : AG annoncées publiquement et archive publique, rien d'autre. */
+/** Ancien lien « #/public » : c'est maintenant la page d'accueil. */
 function publicScreen() {
-  app.replaceChildren(h('div', { class: 'splash splash-wide' }, h('div', { class: 'splash-inner' }, brand(true),
-    publicArchivePage(() => { history.replaceState(null, '', location.pathname); location.reload(); }))));
+  history.replaceState(null, '', location.pathname);
+  lockedScreen();
 }
 
 /** Voter avec un code à 5 chiffres, sans compte (sur place uniquement). */
@@ -98,7 +89,6 @@ function voteScreen() {
   splash(publicVotePage(() => { history.replaceState(null, '', location.pathname); location.reload(); }));
 }
 
-const step = (n: string, t: string) => h('div', { class: 'splash-step' }, h('span', null, n), h('p', null, t));
 
 function joinScreen(token: string) {
   const input = h('input', { class: 'input input-big', type: 'text', maxlength: '40', placeholder: 'Ton prénom ou pseudo', autocomplete: 'off', required: true }) as HTMLInputElement;

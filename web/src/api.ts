@@ -68,6 +68,8 @@ export const api = {
   lookupVote: (code: string, pos: { lat: number; lng: number; accuracy?: number } | null) => req<{ vote: Vote; agTitle: string }>('POST', '/public/votes/lookup', { code, ...(pos ?? {}) }),
   publicBallot: (code: string, choice: number, pos: { lat: number; lng: number; accuracy?: number } | null) => req<{ vote: Vote }>('POST', '/public/votes/ballot', { code, choice, ...(pos ?? {}) }),
   voteResult: (id: string) => req<{ result: VoteResult }>('GET', `/public/votes/${id}/result`),
+  openVotes: () => req<{ votes: { vote: Vote; agTitle: string }[] }>('GET', '/public/votes/open'),
+  openBallot: (id: string, choice: number) => req<{ vote: Vote }>('POST', `/public/votes/${id}/open-ballot`, { choice }),
 
   points: () => req<{ points: Point[] }>('GET', '/points'),
   createPoint: (p: PointInput) => req<{ point: Point }>('POST', '/points', p),

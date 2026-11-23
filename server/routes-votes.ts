@@ -44,14 +44,14 @@ interface VoteRow {
   id: string; point_id: string; question: string; options: string; code: string; status: 'open' | 'closed';
   radius: number; created_by: string; created_at: number; closed_at: number | null;
 }
-interface PointLite { id: string; type: string; space: string; title: string; lat: number; lng: number; created_by: string; starts_at: number | null }
+interface PointLite { id: string; type: string; space: string; title: string; lat: number; lng: number; created_by: string; starts_at: number | null; public: number }
 
 const VOTER_COOKIE = 'terrain_voter';
 const MAX_ACCURACY = 100; // au-delà, la position est trop floue pour décider
 
 const getVote = (id: string) => db.prepare('SELECT * FROM votes WHERE id = ?').get(id) as VoteRow | undefined;
 const getOpenByCode = (code: string) => db.prepare("SELECT * FROM votes WHERE code = ? AND status = 'open'").get(code) as VoteRow | undefined;
-const getPoint = (id: string) => db.prepare('SELECT id, type, space, title, lat, lng, created_by, starts_at FROM points WHERE id = ?').get(id) as PointLite | undefined;
+const getPoint = (id: string) => db.prepare('SELECT id, type, space, title, lat, lng, created_by, starts_at, public FROM points WHERE id = ?').get(id) as PointLite | undefined;
 
 function counts(voteId: string, n: number): number[] {
   const out = Array.from({ length: n }, () => 0);
@@ -245,6 +245,36 @@ publicVotes.post('/votes/ballot', tryLimit, (req, res) => {
   if (far) return res.status(far === NEED_POSITION ? 428 : 403).json({ error: far, radius: v.radius });
   const key = voterKey(req, res);
   const r = cast(v, ag, key, body.data.choice);
+  if ('error' in r) return res.status(r.status).json({ error: r.error });
+  res.json({ vote: { ...voteDto(getVote(v.id)!, { full: false, voterKey: key }), code: null } });
+});
+
+/**
+ * Votes ouverts à tous, SANS code : uniquement les votes « peu importe la distance »
+ * d'une AG annoncée publiquement (sur une AG interne, la question ne doit pas fuiter : le code reste nécessaire).
+ */
+const isOpenToAll = (v: VoteRow, ag: PointLite | undefined) => !!ag && v.status === 'open' && v.radius === 0 && ag.type === 'ag' && ag.space === 'mvt' && !!ag.public;
+
+publicVotes.get('/votes/open', (req, res) => {
+  const rows = db.prepare("SELECT * FROM votes WHERE status = 'open' AND radius = 0 ORDER BY created_at DESC LIMIT 50").all() as unknown as VoteRow[];
+  const key = voterKey(req, res);
+  const out = rows.flatMap((v) => {
+    const ag = getPoint(v.point_id);
+    if (!isOpenToAll(v, ag)) return [];
+    return [{ vote: { ...voteDto(v, { full: false, voterKey: key }), code: null }, agTitle: ag!.title }];
+  });
+  res.json({ votes: out });
+});
+
+/** Voter sans code, sur un vote ouvert à tous. */
+publicVotes.post('/votes/:id/open-ballot', tryLimit, (req, res) => {
+  const body = z.object({ choice: z.number().int() }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'Données invalides' });
+  const v = getVote(req.params.id);
+  const ag = v && getPoint(v.point_id);
+  if (!v || !isOpenToAll(v, ag)) return res.status(404).json({ error: 'Ce vote n\'est pas ouvert à tous (ou il est clos).' });
+  const key = voterKey(req, res);
+  const r = cast(v, ag!, key, body.data.choice);
   if ('error' in r) return res.status(r.status).json({ error: r.error });
   res.json({ vote: { ...voteDto(getVote(v.id)!, { full: false, voterKey: key }), code: null } });
 });

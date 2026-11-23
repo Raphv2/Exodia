@@ -124,7 +124,7 @@ export function openNewVote(p: Point) {
         h('button', { class: 'link-btn', type: 'button', onclick: () => { if (state.options.length < 8) { state.options.push(''); renderOptions(); } } }, '+ Ajouter un choix')),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Pour voter, être à moins de'),
         chips(VOTE_RADII.map((r) => ({ value: r as number, label: voteRadiusLabel(r) })), state.radius, (v) => (state.radius = v)),
-        h('span', { class: 'field-hint' }, 'Autour du point de l\'AG. 50 m suffit pour une salle ou une cour ; plus large pour un amphi, une esplanade ou une manif. « Peu importe » : on peut voter de partout, sans donner sa position (le code seul suffit).')),
+        h('span', { class: 'field-hint' }, 'Autour du point de l\'AG. 50 m suffit pour une salle ou une cour ; plus large pour un amphi, une esplanade ou une manif. « Peu importe » : on peut voter de partout, sans donner sa position ; si l\'AG est annoncée publiquement, le vote apparaît même directement sur la page d\'accueil, sans code.')),
     ),
     footer: submit,
   });

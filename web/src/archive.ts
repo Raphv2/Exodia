@@ -18,11 +18,11 @@ const MAX_FILE = 15 * 1024 * 1024;
 const fmtMonth = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' });
 const monthOf = (t: number) => { const s = fmtMonth.format(t); return s.charAt(0).toUpperCase() + s.slice(1); };
 
-type Entry = { date: number; item?: ArchiveItem; reg?: RegistryEntry };
+export type Entry = { date: number; item?: ArchiveItem; reg?: RegistryEntry };
 type Filter = 'all' | 'docs' | 'events' | 'votes';
 
 /** Carte d'un document d'archive (aussi utilisée sur la page publique). */
-function itemCard(it: ArchiveItem, opts: { editable: boolean; onChange?: () => void }) {
+export function itemCard(it: ArchiveItem, opts: { editable: boolean; onChange?: () => void }) {
   const body = it.body ? h('p', { class: 'arch-body' }, it.body) : null;
   const long = !!it.body && it.body.length > 280;
   if (body && long) body.classList.add('clamped');
@@ -81,7 +81,7 @@ function registryCard(r: RegistryEntry) {
 }
 
 /** Frise par mois. */
-function timeline(entries: Entry[], render: (e: Entry) => HTMLElement, empty: HTMLElement) {
+export function timeline(entries: Entry[], render: (e: Entry) => HTMLElement, empty: HTMLElement) {
   if (!entries.length) return empty;
   const out = h('div', { class: 'arch-timeline' });
   let month = '';

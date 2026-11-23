@@ -1228,3 +1228,64 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
 
 /* Côté Mouvement : fond de carte neutre (pas de lilas LFI). */
 :root[data-space='mvt'] #map { background: #e6e4e1; }
+
+/* ==========================================================================
+   Page d'accueil publique (sans compte) — style Mouvement
+   bandeau noir à liseré rouge, page « papier », titres condensés soulignés de rouge
+   ========================================================================== */
+.home-page { min-height: 100dvh; background: var(--panel); color: var(--ink); }
+.home-band { background: #1b1b1b; color: #fff; box-shadow: 0 3px 0 var(--violet); padding: calc(10px + var(--safe-t)) 16px 10px; position: sticky; top: 0; z-index: 20; }
+.home-top { max-width: 880px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.home-top-actions { display: flex; gap: 8px; }
+.btn-band { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,0.45); }
+.btn-band:hover { background: rgba(255,255,255,0.08); }
+.btn-band-solid { background: var(--violet); color: #fff; }
+.btn-band-solid:hover { background: var(--violet-dark); }
+.btn-band .ico, .btn-band-solid .ico { color: inherit; }
+.home { max-width: 880px; margin: 0 auto; padding: 28px 16px calc(44px + var(--safe-b)); display: flex; flex-direction: column; gap: 34px; }
+.home-hero { display: flex; flex-direction: column; gap: 12px; }
+.home-title { margin: 0; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: clamp(44px, 11vw, 80px); line-height: 0.95; color: #141414; }
+.home-lead { margin: 0; max-width: 580px; font-family: var(--font-read, serif); font-size: 18px; color: var(--ink-soft); }
+.home-section { display: flex; flex-direction: column; gap: 14px; }
+.home-h2 { margin: 0; align-self: flex-start; display: flex; align-items: center; gap: 10px; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: 28px; color: #141414; padding-bottom: 4px; box-shadow: inset 0 -3px 0 var(--violet); }
+.home-h2 .ico { color: var(--violet); }
+.home-loading { margin: 0; color: var(--muted); }
+.home-empty { display: flex; align-items: center; gap: 10px; padding: 16px; border: 2px dashed var(--line); border-radius: var(--r-lg); color: var(--muted); font-family: var(--font-read, serif); }
+.home-empty .ico { color: var(--muted); }
+.home-card { background: #fff; color: #141414; border: 2px solid var(--line); border-radius: var(--r-lg); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.home-meta { font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; color: var(--violet); }
+.home-q { margin: 0; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: 25px; line-height: 1.05; }
+.home-votes { display: grid; gap: 12px; }
+.home-vote { border-color: #141414; border-left-width: 6px; }
+.home-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.home-choices .btn { flex: 1 1 140px; min-height: 52px; font-size: 17px; background: #141414; color: #fff; }
+.home-choices .btn:hover { background: var(--violet); }
+.home-voted { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: var(--r); background: #e8f5ee; color: #0B6E4F; font-weight: 700; }
+.home-voted .ico { color: inherit; flex: none; margin-top: 2px; }
+.home-fine { font-size: 12.5px; color: var(--muted); }
+.home-map { height: 300px; border-radius: var(--r-lg); overflow: hidden; border: 2px solid var(--line); }
+.home-ags { display: flex; flex-direction: column; gap: 12px; }
+.home-ag-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.home-ag { flex-direction: row; align-items: flex-start; gap: 14px; }
+.home-ag-date { flex: none; width: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 0; border-radius: var(--r); background: var(--violet); color: #fff; }
+.home-ag-date strong { font-family: var(--font-title); font-weight: 400; font-size: 30px; line-height: 1; }
+.home-ag-date span { font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; }
+.home-ag-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.home-desc { margin: 0; color: var(--ink-soft); font-family: var(--font-read, serif); white-space: pre-wrap; overflow-wrap: anywhere; }
+.home-link { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; font-weight: 900; color: var(--violet); text-decoration: none; margin-top: 4px; }
+.home-link .ico { color: inherit; }
+.home-archive { display: flex; flex-direction: column; gap: 10px; }
+.home-more { align-self: center; }
+.home-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding-top: 18px; border-top: 2px solid var(--line); font-family: var(--font-read, serif); }
+.home-foot p { margin: 0; }
+.home-steps .splash-step { background: var(--violet-tint); border-left-color: var(--violet); color: #141414; }
+.home-steps .splash-step span { color: var(--violet); }
+@media (max-width: 560px) {
+  .home-top-actions .btn span { display: none; }
+  .home-top-actions .btn { width: 42px; padding: 0; }
+  .home-q { font-size: 22px; }
+  .home-map { height: 230px; }
+}
+@media (min-width: 900px) {
+  .home-votes { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+}
