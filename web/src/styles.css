@@ -1289,3 +1289,9 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
 @media (min-width: 900px) {
   .home-votes { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
 }
+
+/* Votes sans compte : indicatifs */
+.home-vote-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.home-badge { padding: 2px 8px; border-radius: 4px; background: #fff4d6; color: #8a5a00; border: 1px solid #f0c96a; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; cursor: help; }
+.vote-indicatif { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 0; padding: 8px 10px; border-radius: var(--r); background: #fff4d6; color: #6b4600; font-size: 13px; }
+.vote-indicatif .ico { color: inherit; flex: none; margin-top: 1px; }

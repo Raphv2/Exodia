@@ -35,7 +35,7 @@ export function publicHome(brand: HTMLElement, actions: HomeActions): HTMLElemen
     h('main', { class: 'home' },
     h('section', { class: 'home-hero' },
       h('h1', { class: 'home-title' }, 'AG, votes', h('br'), 'et archives'),
-      h('p', { class: 'home-lead' }, 'Les assemblées générales annoncées, les votes ouverts à tous et les documents publics. Pas besoin de compte pour suivre ni pour voter.'),
+      h('p', { class: 'home-lead' }, 'Les assemblées générales annoncées, les votes ouverts à tous et les documents publics. Pas besoin de compte pour suivre ni pour voter (les votes sans compte sont indicatifs).'),
     ),
     section('vote', 'Votes en cours', votesBox),
     section('users', 'Prochaines AG', agsBox),
@@ -90,7 +90,9 @@ function voteCard(v: Vote, agTitle: string): HTMLElement {
   const render = (vote: Vote) => {
     const done = vote.myChoice != null;
     clear(card,
-      h('span', { class: 'home-meta' }, agTitle),
+      h('div', { class: 'home-vote-head' },
+        h('span', { class: 'home-meta' }, agTitle),
+        h('span', { class: 'home-badge', title: 'Sans compte, un même appareil peut revoter avec un autre navigateur : le résultat donne une tendance, pas une décision.' }, 'Vote indicatif')),
       h('h3', { class: 'home-q' }, vote.question),
       done
         ? h('div', { class: 'home-voted' }, icon('check', 18), h('span', null, `Tu as voté « ${vote.options[vote.myChoice!]} ». Les résultats s'afficheront à la clôture.`))
@@ -99,7 +101,7 @@ function voteCard(v: Vote, agTitle: string): HTMLElement {
             try { render((await api.openBallot(vote.id, i)).vote); toast('A voté !', 'ok', 3500, 'vote'); }
             catch (err) { toast((err as ApiError).message, 'err', 5000); render(vote); }
           } }, o))),
-      h('span', { class: 'home-fine' }, `${vote.total} vote${vote.total > 1 ? 's' : ''} · un seul vote par appareil · choix anonyme`),
+      h('span', { class: 'home-fine' }, `${vote.total} vote${vote.total > 1 ? 's' : ''} · vote indicatif, ouvert à tous sans compte · choix anonyme`),
     );
   };
   render(v);

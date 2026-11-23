@@ -124,7 +124,8 @@ export function openNewVote(p: Point) {
         h('button', { class: 'link-btn', type: 'button', onclick: () => { if (state.options.length < 8) { state.options.push(''); renderOptions(); } } }, '+ Ajouter un choix')),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Pour voter, être à moins de'),
         chips(VOTE_RADII.map((r) => ({ value: r as number, label: voteRadiusLabel(r) })), state.radius, (v) => (state.radius = v)),
-        h('span', { class: 'field-hint' }, 'Autour du point de l\'AG. 50 m suffit pour une salle ou une cour ; plus large pour un amphi, une esplanade ou une manif. « Peu importe » : on peut voter de partout, sans donner sa position ; si l\'AG est annoncée publiquement, le vote apparaît même directement sur la page d\'accueil, sans code.')),
+        h('span', { class: 'field-hint' }, 'Autour du point de l\'AG. 50 m suffit pour une salle ou une cour ; plus large pour un amphi, une esplanade ou une manif. « Peu importe » : on peut voter de partout, sans donner sa position ; si l\'AG est annoncée publiquement, le vote apparaît même directement sur la page d\'accueil, sans code.'),
+        h('p', { class: 'vote-indicatif' }, icon('circle-alert', 16), h('span', null, 'Vote sans compte = vote indicatif : un même appareil peut revoter en changeant de navigateur ou en navigation privée. Pour une vraie décision, garde une distance courte et vérifie le nombre de votes par rapport aux présent·es.'))),
     ),
     footer: submit,
   });
@@ -144,7 +145,7 @@ export function openKahoot(voteId: string) {
       clear(body,
         h('p', { class: 'kahoot-question' }, v.question),
         open && v.code ? h('div', { class: 'kahoot-code', 'aria-label': `Code ${v.code.split('').join(' ')}` }, v.code.split('').map((d) => h('span', null, d))) : null,
-        open ? h('p', { class: 'kahoot-hint' }, `Tape ce code sur la page d'accueil de l'app (sans compte) ou dans la fiche de l'AG. ${whereText(v.radius)}`) : h('p', { class: 'kahoot-hint' }, 'Vote clos : voici les résultats.'),
+        open ? h('p', { class: 'kahoot-hint' }, `Tape ce code sur la page d'accueil de l'app (sans compte) ou dans la fiche de l'AG. ${whereText(v.radius)}${v.radius ? '' : ' Vote indicatif : sans compte, on peut revoter avec un autre navigateur.'}`) : h('p', { class: 'kahoot-hint' }, 'Vote clos : voici les résultats.'),
         h('p', { class: 'kahoot-total' }, h('strong', null, String(v.total)), ` vote${v.total > 1 ? 's' : ''}`),
         resultBars(v.options, v.counts, v.total),
       );
