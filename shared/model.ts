@@ -341,6 +341,11 @@ export type RegistryEntry =
 /** AG annoncée publiquement (vue sans compte). */
 export interface PublicAg { id: string; title: string; description: string | null; lat: number; lng: number; startsAt: number; endsAt: number }
 
+/** Chat chiffré (côté Mouvement) : le serveur ne transporte que des clés publiques et des messages chiffrés. */
+export interface ChatMember { id: string; name: string; publicKey: string }
+export interface ChatEpochKey { epochId: number; senderId: string; senderKey: string; recipientKey: string; wrapped: string; iv: string }
+export interface ChatMessage { id: string; epochId: number; senderId: string; senderName: string | null; iv: string; ciphertext: string; createdAt: number }
+
 export interface VoteResult { id: string; status: 'open' | 'closed'; question: string; options: string[]; counts: number[] | null }
 
 export const colorOf = (p: Pick<Point, 'type' | 'color'>) => p.color ?? TYPES[p.type].color;

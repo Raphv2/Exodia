@@ -6,6 +6,7 @@ import { access } from './routes-access';
 import { points, cleanup, releaseBlocages } from './routes-points';
 import { votes, publicVotes } from './routes-votes';
 import { archive, publicArchive, cleanupArchive } from './routes-archive';
+import { chat, cleanupChat } from './routes-chat';
 import { stream } from './events';
 
 const WEB_DIR = path.resolve('dist/web');
@@ -53,6 +54,7 @@ api.get('/stream', requireDevice, stream);
 api.use(requireDevice, points);
 api.use(requireDevice, votes);
 api.use(requireDevice, archive);
+api.use(requireDevice, chat);
 api.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
   res.status((err as { status?: number }).status ?? 500).json({ error: 'Erreur serveur' });
@@ -68,7 +70,8 @@ if (hasBuild) {
 
 cleanup();
 cleanupArchive();
-setInterval(() => { cleanup(); cleanupArchive(); }, 3600_000).unref();
+cleanupChat();
+setInterval(() => { cleanup(); cleanupArchive(); cleanupChat(); }, 3600_000).unref();
 setInterval(releaseBlocages, 60_000).unref();
 
 // HOST=127.0.0.1 en production : seul le reverse proxy (Caddy) peut joindre l'app.

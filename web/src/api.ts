@@ -1,4 +1,4 @@
-import type { CreatedInvite, Device, Invite, Point, PointInput, Role, Space, Vote, VoteResult, ArchiveItem, RegistryEntry, PublicAg } from '../../shared/model';
+import type { CreatedInvite, Device, Invite, Point, PointInput, Role, Space, Vote, VoteResult, ArchiveItem, RegistryEntry, PublicAg, ChatMember, ChatEpochKey, ChatMessage } from '../../shared/model';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -38,6 +38,14 @@ export const api = {
   rename: (name: string) => req('PATCH', '/me', { name }),
   claim: (token: string, name: string) => req<{ device: Device }>('POST', '/auth/claim', { token, name }),
   logout: () => req('POST', '/auth/logout', {}),
+
+  // Chat chiffré de bout en bout (le serveur ne voit que des clés publiques et des messages chiffrés)
+  chatKey: (publicKey: unknown) => req('PUT', '/chat/key', { publicKey }),
+  chatState: () => req<{ members: ChatMember[]; lastEpoch: { id: number; members: { id: string; key: string }[] } | null; keys: ChatEpochKey[] }>('GET', '/chat/state'),
+  chatEpoch: (o: { wraps: { deviceId: string; wrapped: string; iv: string; recipientKey: string }[]; senderKey: string }) => req<{ epochId: number }>('POST', '/chat/epochs', o),
+  chatMessages: (before?: number) => req<{ messages: ChatMessage[] }>('GET', `/chat/messages${before ? `?before=${before}` : ''}`),
+  chatSend: (o: { epochId: number; iv: string; ciphertext: string }) => req<{ id: string; createdAt: number }>('POST', '/chat/messages', o),
+  chatDelete: (id: string) => req('DELETE', `/chat/messages/${id}`),
 
   // Archive (côté Mouvement)
   archive: () => req<{ items: ArchiveItem[]; registry: RegistryEntry[] }>('GET', '/archive'),

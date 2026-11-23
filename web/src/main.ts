@@ -25,6 +25,7 @@ import { mountTeam } from './team';
 import { openSheet } from './sheet';
 import { publicVotePage } from './votes';
 import { mountArchive, publicArchivePage } from './archive';
+import { mountChat } from './chat';
 import { h, icon, toast, isDesktop, time } from './ui';
 import { quietPosition, walkMinutes } from './geo';
 import { chips } from './forms';
@@ -139,6 +140,7 @@ const NAV: { view: View; label: string; icon: string }[] = [
   { view: 'agenda', label: 'Agenda', icon: 'calendar-days' },
   { view: 'route', label: 'Trajet', icon: 'route' },
   { view: 'archive', label: 'Archive', icon: 'archive' },
+  { view: 'chat', label: 'Chat', icon: 'message-circle' },
   { view: 'team', label: 'Équipe', icon: 'users-round' },
 ];
 
@@ -147,7 +149,7 @@ function startApp() {
   store.initSpace();
   const mvt = store.space === 'mvt';
   // Le trajet de collage n'existe que côté LFI, l'archive que côté Mouvement.
-  const nav = NAV.filter((n) => (n.view !== 'route' || !mvt) && (n.view !== 'archive' || mvt));
+  const nav = NAV.filter((n) => (n.view !== 'route' || !mvt) && ((n.view !== 'archive' && n.view !== 'chat') || mvt));
   const teamLabel = store.me.role === 'membre' ? 'Profil' : 'Équipe';
 
   const navBtn = (n: (typeof NAV)[number], cls: string) => h('button', {
@@ -158,6 +160,7 @@ function startApp() {
     agenda: h('section', { class: 'panel-view', dataset: { view: 'agenda' } }),
     route: h('section', { class: 'panel-view', dataset: { view: 'route' } }),
     archive: h('section', { class: 'panel-view', dataset: { view: 'archive' } }),
+    chat: h('section', { class: 'panel-view panel-chat', dataset: { view: 'chat' } }),
     team: h('section', { class: 'panel-view', dataset: { view: 'team' } }),
   };
 
@@ -206,7 +209,7 @@ function startApp() {
         h('span', { class: 'me-name' }, store.me.name)),
     ),
     h('main', { class: 'main' },
-      h('aside', { class: 'panel' }, h('div', { class: 'panel-grab' }, h('span')), panels.agenda, panels.route, panels.archive, panels.team),
+      h('aside', { class: 'panel' }, h('div', { class: 'panel-grab' }, h('span')), panels.agenda, panels.route, panels.archive, panels.chat, panels.team),
       h('div', { class: 'map-wrap' },
         mapEl,
         h('div', { class: 'map-filters', role: 'toolbar', 'aria-label': 'Filtres' },
@@ -237,6 +240,7 @@ function startApp() {
   });
   if (!mvt) mountRoute(panels.route);
   if (mvt) mountArchive(panels.archive);
+  if (mvt) mountChat(panels.chat);
   mountTeam(panels.team);
 
   const applyView = () => {
@@ -314,6 +318,14 @@ function connectStream() {
   // Votes : participation et résultats en direct.
   es.addEventListener('votes', () => store.emit('votes'));
   es.addEventListener('archive', () => store.emit('archive'));
+  // Chat : on ne reçoit qu'un signal (le contenu est chiffré) ; petite notification si on n'est pas dans le chat.
+  es.addEventListener('chat', (ev) => {
+    store.emit('chat');
+    const d = JSON.parse((ev as MessageEvent).data || '{}') as { kind?: string; by?: string };
+    if (d.kind === 'message' && d.by !== store.me.id && store.view !== 'chat' && notifRadius() >= 0) {
+      toast('Nouveau message dans le chat', 'info', 5000, 'message-circle', () => store.setView('chat'));
+    }
+  });
   es.addEventListener('revoked', () => location.reload());
 }
 

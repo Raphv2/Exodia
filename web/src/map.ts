@@ -221,3 +221,14 @@ export function drawRoute(path: Pos[], closeLoop: boolean) {
 }
 
 export const clearRoute = () => routeLayer.clearLayers();
+
+let spot: L.Marker | null = null;
+/** Repère temporaire (position partagée dans le chat), distinct de « ma position ». */
+export function markSpot(pos: { lat: number; lng: number }, label: string) {
+  spot?.remove();
+  spot = L.marker([pos.lat, pos.lng], {
+    icon: L.divIcon({ className: 'spot-wrap', html: '<div class="spot"></div>', iconSize: [22, 22], iconAnchor: [11, 11] }),
+    zIndexOffset: 2000,
+  }).bindTooltip(h('span', null, label), { direction: 'top', permanent: true, className: 'pin-tip' }).addTo(map);
+  setTimeout(() => { spot?.remove(); spot = null; }, 5 * 60_000);
+}

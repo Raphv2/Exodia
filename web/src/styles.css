@@ -1164,3 +1164,34 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .pub .empty { color: #fff; }
 .pub .empty .ico { color: rgba(255,255,255,0.7); }
 .pub .arch-month { color: rgba(255,255,255,0.8); border-color: rgba(255,255,255,0.2); }
+
+/* ==========================================================================
+   Chat chiffré
+   ========================================================================== */
+.panel-view.panel-chat.on { height: 100%; padding-bottom: 10px; gap: 10px; }
+.chat-e2e { display: flex; align-items: center; gap: 6px; margin: -6px 0 0; font-size: 12.5px; color: var(--muted); }
+.chat-status:empty { display: none; }
+.chat-list { list-style: none; margin: 0; padding: 4px 2px; flex: 1; min-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.chat-day { align-self: center; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 8px 0 2px; }
+.chat-older { align-self: center; }
+.chat-empty { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; color: var(--muted); max-width: 260px; }
+.chat-msg { display: flex; flex-direction: column; align-items: flex-start; max-width: 85%; }
+.chat-msg.mine { align-self: flex-end; align-items: flex-end; }
+.chat-from { font-size: 12px; font-weight: 700; color: var(--ink-soft); margin: 0 6px 2px; }
+.chat-bubble { padding: 8px 12px; border-radius: 14px 14px 14px 4px; background: #fff; border: 1px solid var(--line); color: var(--ink); }
+.chat-msg.mine .chat-bubble { border-radius: 14px 14px 4px 14px; background: var(--violet); border-color: var(--violet); color: #fff; }
+.chat-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-locked { display: inline-flex; align-items: center; gap: 6px; font-style: italic; font-size: 13px; opacity: 0.8; }
+.chat-loc { display: inline-flex; align-items: center; gap: 8px; }
+.chat-loc .ico { color: inherit; }
+.chat-msg.mine .chat-loc .btn { background: rgba(255,255,255,0.2); color: #fff; }
+.chat-meta { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); margin: 2px 6px 0; }
+.chat-del { border: 0; background: none; color: var(--muted); padding: 2px; display: inline-grid; }
+.chat-compose { display: flex; align-items: flex-end; gap: 6px; position: sticky; bottom: 0; background: var(--panel); padding-top: 6px; }
+.chat-input { flex: 1; min-height: 44px; max-height: 140px; resize: none; }
+.chat-send { flex: none; width: 46px; min-height: 46px; padding: 0; }
+.chat-members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.chat-members li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 2px solid var(--line); border-radius: var(--r); background: #fff; }
+.chat-code { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 15px; letter-spacing: 0.06em; color: var(--ink); }
+/* Position partagée sur la carte */
+.spot { width: 22px; height: 22px; border-radius: 50%; background: var(--violet); border: 3px solid #fff; box-shadow: 0 0 0 4px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.35); }
