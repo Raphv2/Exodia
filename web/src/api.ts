@@ -62,6 +62,7 @@ export const api = {
   votes: (pointId: string) => req<{ votes: Vote[]; canRun: boolean }>('GET', `/points/${pointId}/votes`),
   createVote: (pointId: string, question: string, options: string[], radius: number) => req<{ vote: Vote }>('POST', `/points/${pointId}/votes`, { question, options, radius }),
   vote: (id: string) => req<{ vote: Vote }>('GET', `/votes/${id}`),
+  openAppVotes: () => req<{ votes: { vote: Vote; agTitle: string; canRun: boolean }[] }>('GET', '/votes/open'),
   closeVote: (id: string) => req<{ vote: Vote }>('POST', `/votes/${id}/close`, {}),
   ballot: (id: string, choice: number, pos: { lat: number; lng: number; accuracy?: number } | null) => req<{ vote: Vote }>('POST', `/votes/${id}/ballot`, { choice, ...(pos ?? {}) }),
   // Vote public (sans l'app)

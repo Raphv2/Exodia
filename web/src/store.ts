@@ -1,5 +1,5 @@
 import { api } from './api';
-import { TYPES, colorOf, type Device, type Point, type Space } from '../../shared/model';
+import { TYPES, colorOf, type Device, type Point, type Space, type Vote } from '../../shared/model';
 import { inkFor } from './ui';
 
 export type View = 'map' | 'agenda' | 'route' | 'archive' | 'chat' | 'team';
@@ -14,6 +14,8 @@ class Store {
   /** Espace affiché. On ne garde en mémoire que ses points : l'autre espace n'apparaît nulle part. */
   space: Space = 'lfi';
   points: Point[] = [];
+  /** Votes ouverts (côté Mouvement) : bandeau de l'Agenda et badge sur l'épingle de l'AG. */
+  openVotes: { vote: Vote; agTitle: string; canRun: boolean }[] = [];
   view: View = 'map';
   filters: Record<Group, boolean> = { fixe: true, event: true, flash: true, alert: true };
   todayOnly = false;
@@ -50,6 +52,20 @@ class Store {
     if (!this.me.spaces.includes(s) || s === this.space) return;
     try { localStorage.setItem(SPACE_KEY, s); } catch { /* ignore */ }
     location.reload();
+  }
+
+  /** Recharge les votes ouverts (seulement côté Mouvement, le seul où l'on vote). */
+  async refreshVotes() {
+    if (this.space !== 'mvt') { this.openVotes = []; return; }
+    try {
+      this.openVotes = (await api.openAppVotes()).votes.filter((x) => this.points.some((p) => p.id === x.vote.pointId));
+    } catch { /* on garde la liste précédente */ }
+    this.emit('open-votes');
+  }
+
+  /** AG qui ont au moins un vote ouvert. */
+  get votingAgs(): Set<string> {
+    return new Set(this.openVotes.map((x) => x.vote.pointId));
   }
 
   async refresh() {

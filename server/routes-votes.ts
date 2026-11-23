@@ -150,6 +150,19 @@ export const votes = Router();
 
 const canRun = (me: DeviceRow, ag: PointLite) => hasSpace(me, ag.space) && (ag.created_by === me.id || me.role === 'admin');
 
+/** Tous les votes ouverts de mes espaces (accès rapide : bandeau de l'Agenda, badge sur la carte). */
+votes.get('/votes/open', (req, res) => {
+  const rows = db.prepare("SELECT * FROM votes WHERE status = 'open' ORDER BY created_at DESC LIMIT 100").all() as unknown as VoteRow[];
+  const me = req.device!;
+  const out = rows.flatMap((v) => {
+    const ag = getPoint(v.point_id);
+    if (!ag || !hasSpace(me, ag.space)) return [];
+    const full = canRun(me, ag);
+    return [{ vote: voteDto(v, { full, voterKey: `d:${me.id}` }), agTitle: ag.title, canRun: full }];
+  });
+  res.json({ votes: out });
+});
+
 /** Les votes d'une AG. */
 votes.get('/points/:id/votes', (req, res) => {
   const ag = getPoint(req.params.id);

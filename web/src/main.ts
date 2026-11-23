@@ -247,7 +247,7 @@ function startApp() {
   window.addEventListener('resize', applyView);
   applyView();
 
-  store.refresh().then(() => { fitToPoints(); renderMarkers(); }).catch((e) => toast(e.message, 'err'));
+  store.refresh().then(() => { fitToPoints(); renderMarkers(); void store.refreshVotes(); }).catch((e) => toast(e.message, 'err'));
   connectStream();
   setInterval(() => store.refresh().catch(() => {}), 5 * 60_000);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && store.refresh().catch(() => {}));
@@ -306,7 +306,7 @@ function connectStream() {
     })();
   });
   // Votes : participation et résultats en direct.
-  es.addEventListener('votes', () => store.emit('votes'));
+  es.addEventListener('votes', () => { store.emit('votes'); void store.refreshVotes(); });
   es.addEventListener('archive', () => store.emit('archive'));
   // Chat : on ne reçoit qu'un signal (le contenu est chiffré) ; petite notification si on n'est pas dans le chat.
   es.addEventListener('chat', (ev) => {

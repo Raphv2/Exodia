@@ -3,6 +3,7 @@ import { TYPES, iconOf } from '../../shared/model';
 import { occurrences, liveProblems, type Occurrence } from '../../shared/time';
 import { h, icon, clear, time, dayLong, startOfWeek, addDays, sameDay, startOfDay, isAllDay } from './ui';
 import { newPointFlow, chips } from './forms';
+import { openAppVote, openKahoot } from './votes';
 
 let weekStart = startOfWeek(Date.now());
 let showAlerts = true;
@@ -18,6 +19,7 @@ export function mountAgenda(el: HTMLElement, open: (o: Occurrence) => void) {
   root = el;
   onOpen = open;
   store.on('points', render);
+  store.on('open-votes', render);
   setInterval(() => store.view === 'agenda' && render(), 60_000);
   render();
 }
@@ -77,6 +79,7 @@ export function render() {
       ),
     ),
     strip,
+    votesBanner(),
     h('div', { class: 'agenda-kind' }, chips<'all' | 'events' | 'flash'>([
       { value: 'all', label: 'Tout' },
       { value: 'events', label: 'Événements', icon: 'calendar' },
@@ -92,6 +95,30 @@ export function render() {
       h('span', null, kind === 'flash' ? 'Un flash, c\'est une action improvisée qui commence dans les minutes qui viennent.' : store.space === 'mvt' ? 'Ajoute une AG, un rassemblement ou un blocus pour le voir apparaître ici.' : 'Ajoute une AG, un tractage ou un collage pour le voir apparaître ici.'),
       h('button', { class: 'btn btn-primary', onclick: () => { store.setView('map'); newPointFlow(kind === 'flash' ? 'flash' : 'event'); } }, icon('plus', 18), kind === 'flash' ? 'Lancer un flash' : 'Créer un événement'),
     ),
+  );
+}
+
+/** Votes en cours (côté Mouvement) : tout en un coup d'œil, sans chercher l'AG. */
+function votesBanner() {
+  if (store.space !== 'mvt' || !store.openVotes.length) return null;
+  return h('section', { class: 'votes-banner' },
+    h('div', { class: 'section-title' }, icon('vote', 18), `Votes en cours (${store.openVotes.length})`),
+    h('ul', { class: 'votes-banner-list' }, store.openVotes.map(({ vote: v, agTitle, canRun }) => h('li', { class: 'votes-banner-item' },
+      h('div', { class: 'vb-main' },
+        h('span', { class: 'vb-ag' }, agTitle, v.openToAll ? h('em', null, ' · indicatif') : null),
+        h('strong', null, v.question),
+        h('span', { class: 'vb-meta' }, `${v.total} vote${v.total > 1 ? 's' : ''}${v.radius ? ` · sur place à moins de ${v.radius} m` : ''}`)),
+      h('div', { class: 'vb-actions' },
+        v.myChoice == null
+          ? h('button', { class: 'btn btn-small btn-primary', type: 'button', onclick: () => openAppVote(v) }, icon('vote', 15), 'Voter')
+          : h('span', { class: 'vote-done' }, icon('check', 15), 'Voté'),
+        canRun ? h('button', { class: 'btn btn-small btn-light', type: 'button', onclick: () => openKahoot(v.id) }, icon('qr-code', 15), 'Code') : null,
+        h('button', { class: 'btn btn-small btn-light', type: 'button', 'aria-label': 'Voir l\'AG', title: 'Voir l\'AG', onclick: () => {
+          const ag = store.get(v.pointId);
+          if (ag) onOpen({ point: ag, start: ag.startsAt ?? Date.now(), end: ag.endsAt ?? Date.now() });
+        } }, icon('map-pin', 15)),
+      ),
+    ))),
   );
 }
 

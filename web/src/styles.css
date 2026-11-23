@@ -1308,3 +1308,25 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
 .kahoot-code-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: -8px; }
 .kahoot-code.small { gap: 5px; }
 .kahoot-code.small span { width: 40px; height: 52px; font-size: 32px; border-radius: var(--r); background: var(--ink-soft); }
+
+/* ==========================================================================
+   Accès rapide aux votes : bandeau de l'Agenda, badge sur l'épingle
+   ========================================================================== */
+.votes-banner { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 2px solid var(--violet); border-radius: var(--r-lg); background: #fff; }
+.votes-banner .section-title { margin: 0; color: var(--violet); }
+.votes-banner-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.votes-banner-item { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--line); }
+.votes-banner-item:first-child { border-top: 0; padding-top: 0; }
+.vb-main { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; }
+.vb-ag { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.vb-ag em { font-style: normal; color: #8a5a00; }
+.vb-meta { font-size: 12.5px; color: var(--muted); }
+.vb-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.pin-vote {
+  position: absolute; left: -6px; bottom: 6px; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; z-index: 2;
+  background: #fff; color: var(--violet); border: 2px solid var(--violet); box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  animation: vote-pulse 1.6s ease-in-out infinite;
+}
+.pin-vote .ico { color: inherit; }
+@keyframes vote-pulse { 50% { transform: scale(1.18); } }

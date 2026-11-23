@@ -169,7 +169,7 @@ export function openKahoot(voteId: string) {
 }
 
 /** Voter depuis l'app (même règle de distance). */
-function openAppVote(v: Vote) {
+export function openAppVote(v: Vote) {
   const s = openSheet({
     title: 'Voter',
     body: h('div', { class: 'form' },
