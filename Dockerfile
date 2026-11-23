@@ -8,8 +8,11 @@
 #
 # ---- Étape 1 : compilation de l'interface ----
 # Image de départ : Node 22 sur Debian 12 « bookworm », version allégée (slim).
+# Version ÉPINGLÉE (22.23) : la même image à chaque construction, pas de saut de version surprise.
+# Les correctifs 22.23.x arrivent en reconstruisant avec --pull. Pour changer de version, modifier
+# le numéro ici ET dans l'étape finale plus bas (minimum 22.13, voir « engines » de package.json).
 # « AS build » donne un nom à cette étape pour y piocher plus tard.
-FROM node:22-bookworm-slim AS build
+FROM node:22.23-bookworm-slim AS build
 # Dossier de travail dans l'image (créé s'il n'existe pas) ; les commandes suivantes s'y exécutent.
 WORKDIR /app
 # On copie d'abord SEULEMENT la liste des dépendances : tant qu'elle ne change pas, Docker
@@ -26,12 +29,17 @@ RUN npm run build
 # ---- Étape 2 : image finale, légère ----
 # Étape finale : on repart d'une image propre. Rien de l'étape « build » n'est gardé,
 # sauf ce qu'on recopie explicitement plus bas (COPY --from=build).
-FROM node:22-bookworm-slim
+# Même version épinglée que l'étape de compilation.
+FROM node:22.23-bookworm-slim
 # Variables d'environnement lues par le serveur : mode production ; écoute sur toutes les
 # interfaces DU CONTENEUR (0.0.0.0, sinon injoignable depuis l'extérieur du conteneur) ;
 # port 3180 ; données dans /data ; TRUST_PROXY=1 = un proxy (Caddy) est devant, l'app
 # lit donc l'adresse IP réelle du visiteur dans l'en-tête X-Forwarded-For.
+# TZ=Europe/Paris : heure locale du serveur. Indispensable : les événements répétés « chaque jour
+# à 18 h » et la fin des blocus sont calculés en heure locale. Sans TZ, le conteneur serait en UTC
+# (1 à 2 h de décalage). Node embarque ses propres données de fuseaux : pas besoin de tzdata.
 ENV NODE_ENV=production \
+    TZ=Europe/Paris \
     HOST=0.0.0.0 \
     PORT=3180 \
     DATA_DIR=/data \
@@ -49,7 +57,8 @@ COPY --from=build /app/dist/web ./dist/web
 
 # Données persistantes (base SQLite + photos + sauvegardes) : à monter en volume.
 # Le dossier appartient à « node », utilisateur sans privilèges fourni par l'image officielle.
-RUN mkdir -p /data && chown node:node /data
+# /backups : dossier des sauvegardes (service « backup » de docker-compose.yml).
+RUN mkdir -p /data /backups && chown node:node /data /backups
 # VOLUME : /data est un dossier à conserver en dehors du conteneur (survit aux mises à jour).
 VOLUME ["/data"]
 # À partir d'ici, tout (et l'app elle-même) tourne sans les droits root.
@@ -57,11 +66,12 @@ USER node
 
 # Documente le port écouté. Cela ne publie rien : c'est « ports » dans docker-compose.yml qui le fait.
 EXPOSE 3180
-# Bilan de santé : toutes les 30 s, Docker demande la page d'accueil (fetch de Node, pas besoin
-# de curl dans l'image). Après 3 échecs, le conteneur est marqué « unhealthy ».
+# Bilan de santé : toutes les 30 s, Docker interroge /api/health (fetch de Node, pas besoin de
+# curl dans l'image). Cette route répond 200 seulement si l'app tourne ET que sa base répond
+# (503 sinon). Après 3 échecs, le conteneur est marqué « unhealthy ».
 # start-period : 20 s de grâce au démarrage.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3180/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:3180/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # Commande de démarrage : Node charge tsx (--import) pour exécuter directement le TypeScript,
 # et masque l'avertissement « fonction expérimentale » de node:sqlite.

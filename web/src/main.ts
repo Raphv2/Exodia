@@ -191,11 +191,10 @@ function joinScreen(token: string) {
     try {
       // api.claim : le serveur valide le jeton, crée l'appareil et pose le cookie de session.
       store.me = (await api.claim(token, input.value.trim())).device;
-      // But : effacer le drapeau « bienvenue déjà vue » pour que le nouvel arrivant voie les astuces.
-      // ATTENTION : welcome() utilise la clé « terrain:welcomed:<espace> », pas « terrain:welcomed » :
-      // cette ligne n'efface donc rien aujourd'hui (ancienne clé).
+      // Effacer les drapeaux « bienvenue déjà vue » (un par espace, comme dans welcome()) pour que
+      // le nouvel arrivant voie les astuces, même sur un appareil déjà utilisé par quelqu'un d'autre.
       // try/catch : localStorage peut lever une exception (navigation privée, stockage bloqué).
-      try { localStorage.removeItem('terrain:welcomed'); } catch { /* ignore */ }
+      try { for (const s of SPACES) localStorage.removeItem(`terrain:welcomed:${s}`); } catch { /* ignore */ }
       startApp();
     } catch (err) {
       // Échec (jeton expiré, déjà utilisé…) : on réactive le bouton et on affiche l'erreur 6 s.
@@ -424,18 +423,55 @@ function onMarker(p: Point) {
 }
 
 /**
+ * Lit le JSON d'un message SSE sans jamais planter : un message mal formé donne un objet vide
+ * (avant, une exception dans l'écouteur faisait perdre ce message et ceux de la même rafale).
+ */
+function readEvent<T>(ev: Event): Partial<T> {
+  try { return JSON.parse((ev as MessageEvent).data || '{}') as Partial<T>; } catch { return {}; }
+}
+
+/** Délai avant la prochaine tentative de reconnexion (augmente à chaque échec, plafonné à 30 s). */
+let retryDelay = 1000;
+
+/**
  * Ouvre la connexion temps réel avec le serveur (Server-Sent Events).
  * Le serveur envoie des événements nommés (points, votes, archive, chat, revoked) ;
- * on les écoute avec addEventListener(nom, ...). EventSource se reconnecte tout seul en cas de coupure.
+ * on les écoute avec addEventListener(nom, ...).
+ *
+ * Reconnexion : EventSource se reconnecte tout seul après une simple coupure réseau, MAIS il
+ * abandonne définitivement si le serveur répond une erreur (ex. 502 du proxy pendant une mise à
+ * jour). Avant, le direct s'arrêtait alors jusqu'au rechargement de la page. Maintenant, si la
+ * connexion est fermée pour de bon (readyState CLOSED), on en rouvre une nouvelle après un délai
+ * croissant (1 s, 2 s, 4 s… 30 s max), et on recharge les données au retour pour ne rien rater.
  */
 function connectStream() {
   const es = new EventSource('/api/stream');
+  es.addEventListener('open', () => {
+    // Connexion (re)établie : on remet le délai à zéro et on rattrape ce qui a pu être manqué.
+    if (retryDelay > 1000) { void store.refresh().catch(() => {}); void store.refreshVotes(); }
+    retryDelay = 1000;
+  });
+  es.addEventListener('error', () => {
+    // CONNECTING : le navigateur réessaie déjà tout seul, on le laisse faire.
+    if (es.readyState !== EventSource.CLOSED) return;
+    es.close();
+    const wait = retryDelay;
+    retryDelay = Math.min(retryDelay * 2, 30_000);
+    // Avant de rouvrir, on vérifie que l'accès est toujours valable : un appareil révoqué
+    // (réponse 401) recharge la page, qui affichera l'écran public.
+    window.setTimeout(() => {
+      api.me().then(() => connectStream()).catch((e) => {
+        if ((e as ApiError).status === 401) location.reload();
+        else connectStream();
+      });
+    }, wait);
+  });
   // Identifiant du minuteur de « debounce » (voir plus bas).
   let t: number | undefined;
   es.addEventListener('points', (ev) => {
-    // ev.data est du texte JSON envoyé par le serveur ; on le transforme en objet.
-    // Le « as {...} » décrit les champs possibles (tous optionnels) : TypeScript ne vérifie rien à l'exécution.
-    const data = JSON.parse((ev as MessageEvent).data || '{}') as { id?: string; by?: string; action?: string; type?: string; title?: string; flash?: boolean; startsAt?: number; space?: string };
+    // ev.data est du texte JSON envoyé par le serveur ; readEvent le transforme en objet (sans planter).
+    // Le type décrit les champs possibles (tous optionnels) : TypeScript ne vérifie rien à l'exécution.
+    const data = readEvent<{ id: string; by: string; action: string; type: string; title: string; flash: boolean; startsAt: number; space: string }>(ev);
     // Toucher la notification : on montre le point sur la carte et on ouvre sa fiche.
     const show = data.id ? async () => {
       let p = store.get(data.id!);
@@ -493,7 +529,7 @@ function connectStream() {
   // Chat : on ne reçoit qu'un signal (le contenu est chiffré) ; petite notification si on n'est pas dans le chat.
   es.addEventListener('chat', (ev) => {
     store.emit('chat');
-    const d = JSON.parse((ev as MessageEvent).data || '{}') as { kind?: string; by?: string };
+    const d = readEvent<{ kind: string; by: string }>(ev);
     // Notification seulement si : nouveau message, d'une autre personne, chat non affiché, et notifications non désactivées (-1).
     if (d.kind === 'message' && d.by !== store.me.id && store.view !== 'chat' && notifRadius() >= 0) {
       toast('Nouveau message dans le chat', 'info', 5000, 'message-circle', () => store.setView('chat'));

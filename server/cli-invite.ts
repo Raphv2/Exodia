@@ -28,4 +28,6 @@ const base = (process.argv[2] ?? process.env.PUBLIC_URL ?? 'http://localhost:518
 // ttlMinutes: 60 = valable une heure ; maxUses: 1 = un seul appareil pourra l'utiliser.
 const { token } = createInvite({ role: 'admin', ttlMinutes: 60, maxUses: 1, label: 'bootstrap', createdBy: null, spaces: [...SPACES] });
 // Le jeton est dans le fragment (#) de l'URL : il n'est pas envoyé au serveur dans l'adresse.
-console.log(`\nInvitation admin (1 h, usage unique) :\n\n  ${base}/#/join/${token}\n`);
+// L'appareil qui l'ouvre devient LE propriétaire : l'ancien (téléphone perdu) redevient simple admin
+// et peut ensuite être retiré depuis l'app.
+console.log(`\nInvitation propriétaire (1 h, usage unique) :\n\n  ${base}/#/join/${token}\n\nL'appareil qui l'ouvre devient le propriétaire ; l'ancien propriétaire redevient admin.\n`);

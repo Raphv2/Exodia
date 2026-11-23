@@ -30,5 +30,5 @@
     "noFallthroughCasesInSwitch": true
   },
   // Dossiers vérifiés : serveur, code partagé client/serveur, interface, et la config de Vite.
-  "include": ["server", "shared", "web/src", "vite.config.ts"]
+  "include": ["server", "shared", "web/src", "tests", "vite.config.ts"]
 }

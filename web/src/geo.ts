@@ -111,4 +111,10 @@ export function distance(a: Pos, b: Pos) {
 
 // Distance lisible : sous 1 km, arrondie à 10 m (« 340 m ») ; au-delà, en km avec une décimale
 // sous 10 km (« 2,4 km ») et sans au-dessus (« 12 km ») ; virgule française au lieu du point.
-export const fmtDistance = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0).replace('.', ',')} km`);
+// Les seuils sont testés sur la valeur ARRONDIE : 995 m donnait « 1000 m » et 9,96 km « 10,0 km ».
+export const fmtDistance = (m: number) => {
+  const r10 = Math.round(m / 10) * 10;
+  if (r10 < 1000) return `${r10} m`;
+  const km1 = Math.round(m / 100) / 10;
+  return km1 < 10 ? `${km1.toFixed(1).replace('.', ',')} km` : `${Math.round(m / 1000)} km`;
+};

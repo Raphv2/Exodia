@@ -13,13 +13,41 @@ User=terrain
 Group=terrain
 WorkingDirectory=/opt/terrain
 Environment=DATA_DIR=/var/lib/terrain
+# Heure locale : événements répétés et fin des blocus calculés en heure de Paris.
+Environment=TZ=Europe/Paris
 # server/backup.ts : copie cohérente de la base (VACUUM INTO) et des photos dans
 # /var/backups/terrain ; le dernier argument (14) = nombre de jours de sauvegardes gardées.
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning --import tsx server/backup.ts /var/backups/terrain 14
-# Durcissement (plus léger que celui du service principal) : lecture seule partout,
-# sauf les données et le dossier des sauvegardes.
+# Durcissement : le même que celui du service principal (voir terrain.service pour le détail),
+# avec en plus AUCUN accès réseau (une sauvegarde n'en a pas besoin).
 NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Sauvegardes lisibles par le seul compte terrain (et root).
+UMask=0077
+# Lecture seule partout, sauf les données et le dossier des sauvegardes.
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
 ReadWritePaths=/var/lib/terrain /var/backups/terrain
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+# Pas de réseau : le service a sa propre interface réseau, vide (PrivateNetwork), et ne peut
+# ouvrir que des sockets locales (AF_UNIX).
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Pas de MemoryDenyWriteExecute : le JIT de Node (V8) en a besoin (voir terrain.service).

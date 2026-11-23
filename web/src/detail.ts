@@ -20,7 +20,7 @@ import { store, paintOf } from './store';
 import { openSheet, confirmSheet } from './sheet';
 // Fonctions de formulaires réutilisées : modifier un point, libellé de durée, pastilles, création.
 import { editPoint, durLabel, chips, newPointFlow } from './forms';
-import { h, icon, clear, toast, rangeLabel, relative, dateLong, time, toTimeInput, toDateInput, fromInputs } from './ui';
+import { h, icon, clear, toast, rangeLabel, relative, dateLong, time, toTimeInput, toDateInput, fromInputs, addDays, startOfDay } from './ui';
 // Constantes et types du modèle partagé : statuts possibles par type, libellés, problèmes prédéfinis…
 import {
   TYPES, iconOf, canReportProblem, STATUS_LABEL, STATUS_HINT, STATUSES, RECURRENCE_LABEL, PROBLEM_PRESETS, PROBLEM_DURATIONS,
@@ -216,7 +216,10 @@ function openArrivalSheet(p: Point) {
             if (!input.value) return toast('Indique une heure.', 'err');
             // On combine la date du RDV et l'heure saisie (heure locale).
             let t = fromInputs(toDateInput(start), input.value);
-            if (t < start) t += 86400_000; // ex. RDV à 23 h, arrivée à 1 h
+            // Heure plus tôt que le RDV (ex. RDV à 23 h, arrivée à 1 h) : c'est le lendemain. On passe
+            // par la DATE du lendemain plutôt que « + 24 h » : juste avant un changement d'heure, une
+            // journée fait 23 ou 25 h et l'heure affichée aurait été décalée d'une heure.
+            if (t < start) t = fromInputs(toDateInput(addDays(startOfDay(start), 1)), input.value);
             send(t, `Noté : tu arrives vers ${time(t)}`);
           } }, 'Valider')),
       ),

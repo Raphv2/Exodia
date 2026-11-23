@@ -28,8 +28,8 @@ import { store, paintOf, spaceColor, type Group } from './store';
 import { TYPES, iconOf, type Point } from '../../shared/model';
 // Calculs de temps partagés : point actif ?, occurrences (répétitions) dans un intervalle, problèmes en cours.
 import { isActive, occurrences, liveProblems } from '../../shared/time';
-// iconHtml renvoie le SVG d'une icône sous forme de texte HTML (nécessaire pour divIcon).
-import { h, icon, iconHtml, startOfDay, addDays, toast } from './ui';
+// h et icon construisent les épingles en éléments DOM (pas de HTML en texte).
+import { h, icon, startOfDay, addDays, toast } from './ui';
 import { getPosition, type Pos } from './geo';
 // Ajoute le fond de carte (tuiles) adapté à l'espace.
 import { addBasemap } from './basemap';
@@ -160,42 +160,65 @@ function myPledge(p: Point): 'going' | 'providing' | null {
 }
 
 /**
- * Fabrique l'icône HTML d'une épingle. Entrées : le point, et des extras (classe CSS en plus, badge).
+ * Fabrique l'icône d'une épingle. Entrées : le point, et des extras (classe CSS en plus, badge).
  * Sortie : un L.DivIcon. Toute l'apparence (forme, couleur, animation) vient des classes CSS « pin-* ».
+ *
+ * L'épingle est construite en ÉLÉMENTS DOM (h(), icon()) et non plus en texte HTML :
+ *  - aucun texte ne peut être interprété comme du HTML (protection XSS sans dépendre du serveur) ;
+ *  - les couleurs passent par style.setProperty (CSSOM), autorisé par une politique de sécurité
+ *    (CSP) stricte, alors qu'un attribut style="..." dans du HTML serait bloqué.
  */
-function markerIcon(p: Point, extra: { cls?: string; badge?: string | null } = {}) {
+function markerIcon(p: Point, extra: { cls?: string; badge?: string | 'check' | null } = {}) {
   const meta = TYPES[p.type];
   const { color, ink } = paintOf(p);
   const mine = myPledge(p);
   // AG avec un vote ouvert : petit badge de vote qui pulse.
   const voting = store.votingAgs.has(p.id);
-  // Forme de l'épingle : goutte pour un point fixe, carré arrondi avec une pointe pour un événement.
-  // Liste de classes : chaque condition ajoute une classe ou une chaîne vide, puis join(' ') les assemble.
-  // pin-voting (badge vote), pin-event (forme événement), pin-going/pin-providing, pin-flash,
-  // pin-alert + pin-<type> pour les alertes, pin-st-<statut> (ex. blocage tenu/vide).
-  const cls = ['pin', voting ? 'pin-voting' : '', p.mode === 'event' && !meta.alert ? 'pin-event' : '', mine ? `pin-${mine}` : '', p.flash ? 'pin-flash' : '', meta.alert ? `pin-alert pin-${p.type}` : '', p.status ? `pin-st-${p.status}` : '', extra.cls ?? ''].join(' ');
-  // HTML de l'épingle, construit en texte : Leaflet l'insère tel quel (innerHTML), donc attention à
-  // n'y mettre aucun texte venant des utilisateurs. Ici : couleurs (validées #rrggbb par le serveur),
-  // SVG d'icônes, badge (« ! », un numéro ou une icône) et des titres fixes. Le titre du point passe
-  // par l'option `title` du marqueur, qui, elle, est échappée.
-  // --c et --ink sont des variables CSS : couleur de fond et couleur de l'icône.
-  const html = `<div class="${cls}" style="--c:${color};--ink:${ink}"><div class="pin-head">${iconHtml(iconOf(p), 18, 2.4)}</div>${extra.badge ? `<span class="pin-badge">${extra.badge}</span>` : ''}${p.photo ? '<span class="pin-photo"></span>' : ''}${p.flash ? `<span class="pin-zap">${iconHtml('zap', 11, 2.6)}</span>` : ''}${voting ? `<span class="pin-vote" title="Vote en cours">${iconHtml('vote', 12, 2.6)}</span>` : ''}${mine ? `<span class="pin-me" title="${mine === 'going' ? 'Tu y participes' : 'Tu fournis du matériel'}">${iconHtml(mine === 'going' ? 'check' : 'package', 12, 3)}</span>` : ''}</div>`;
+  // Liste de classes : chaque condition ajoute une classe ou une chaîne vide (filtrée ensuite).
+  // pin-voting (badge vote), pin-event (forme événement : carré à pointe ; sinon goutte), pin-going /
+  // pin-providing, pin-flash, pin-alert + pin-<type> pour les alertes, pin-st-<statut> (ex. blocage tenu/vide).
+  const cls = ['pin', voting ? 'pin-voting' : '', p.mode === 'event' && !meta.alert ? 'pin-event' : '', mine ? `pin-${mine}` : '',
+    p.flash ? 'pin-flash' : '', meta.alert ? `pin-alert pin-${p.type}` : '', p.status ? `pin-st-${p.status}` : '', extra.cls ?? '']
+    .filter(Boolean).join(' ');
+  const el = h('div', { class: cls },
+    h('div', { class: 'pin-head' }, icon(iconOf(p), 18, 2.4)),
+    // Badge : « ! » (problème), numéro d'ordre (trajet) ou une coche (point choisi pour le trajet).
+    extra.badge ? h('span', { class: 'pin-badge' }, extra.badge === 'check' ? icon('check', 13, 3.2) : extra.badge) : null,
+    p.photo ? h('span', { class: 'pin-photo' }) : null,
+    p.flash ? h('span', { class: 'pin-zap' }, icon('zap', 11, 2.6)) : null,
+    voting ? h('span', { class: 'pin-vote', title: 'Vote en cours' }, icon('vote', 12, 2.6)) : null,
+    mine ? h('span', { class: 'pin-me', title: mine === 'going' ? 'Tu y participes' : 'Tu fournis du matériel' },
+      icon(mine === 'going' ? 'check' : 'package', 12, 3)) : null,
+  );
+  // --c et --ink : variables CSS de couleur de fond et d'encre, posées via le CSSOM.
+  el.style.setProperty('--c', color);
+  el.style.setProperty('--ink', ink);
   // className = classe du conteneur ; iconSize = taille en pixels ; iconAnchor = le pixel de l'icône
   // posé exactement sur les coordonnées (ici la pointe en bas) ; tooltipAnchor = où naît l'infobulle.
-  return L.divIcon({ html, className: 'pin-wrap', iconSize: [36, 46], iconAnchor: [18, 42], tooltipAnchor: [0, -38] });
+  // `html` accepte un élément DOM (Leaflet 1.9).
+  return L.divIcon({ html: el, className: 'pin-wrap', iconSize: [36, 46], iconAnchor: [18, 42], tooltipAnchor: [0, -38] });
 }
 
+/** Une épingle affichée : le marqueur Leaflet, le point qu'il montre, et sa « signature » visuelle. */
+interface Shown { m: L.Marker; p: Point; sig: string }
+// Les épingles actuellement sur la carte, par id de point.
+const shown = new Map<string, Shown>();
+
 /**
- * (Re)dessine toutes les épingles. Pas d'entrée ni de sortie.
- * Simple et robuste : on efface tout et on recrée, plutôt que de mettre à jour au cas par cas.
+ * (Re)dessine les épingles. Pas d'entrée ni de sortie.
+ * Avant, on effaçait tout et on recréait tout à chaque événement et chaque minute : coûteux avec
+ * beaucoup de points, et une infobulle ouverte se refermait. Maintenant on calcule pour chaque point
+ * une « signature » (tout ce qui change son apparence) et on ne touche qu'aux épingles dont la
+ * signature a changé ; les points qui ne sont plus visibles sont retirés.
  */
 export function renderMarkers() {
   // La carte n'existe pas encore (appel trop tôt) : rien à faire.
   if (!map) return;
-  markers.clearLayers();
   const routeMode = store.view === 'route';
   const order = store.routeOrder;
+  const seen = new Set<string>();
   for (const p of visiblePoints()) {
+    seen.add(p.id);
     // Peut-on ajouter ce type de point au trajet de collage ? (panneau, collage)
     const routable = !!TYPES[p.type].routable;
     const problems = liveProblems(p);
@@ -209,36 +232,48 @@ export function renderMarkers() {
       else if (store.routeSelection.has(p.id)) {
         cls += ' pin-selected';
         const i = order.indexOf(p.id);
-        badge = i >= 0 ? String(i + 1) : iconHtml('check', 13, 3.2);
+        badge = i >= 0 ? String(i + 1) : 'check';
       }
     }
-    // L.marker([lat, lng], options) : une épingle à ces coordonnées.
-    const m = L.marker([p.lat, p.lng], {
-      icon: markerIcon(p, { cls, badge }),
-      // Passe au premier plan au survol de la souris.
-      riseOnHover: true,
-      // Ordre d'empilement : alertes et problèmes au-dessus de tout, puis points choisis pour le trajet.
-      zIndexOffset: TYPES[p.type].alert || problems.length ? 1000 : cls.includes('pin-selected') ? 500 : 0,
-      // keyboard + title : épingle atteignable au clavier (Tab), avec un titre pour les lecteurs d'écran.
-      keyboard: true,
-      title: p.title,
-    });
     const mine = myPledge(p);
-    // bindTooltip : infobulle au survol. On lui passe un élément DOM (créé par h(), donc texte échappé)
-    // plutôt qu'une chaîne HTML.
-    // Infobulle : de vraies icônes, pas de symboles texte.
-    m.bindTooltip(h('span', { class: 'tip-line' },
+    const { color, ink } = paintOf(p);
+    // Signature : tout ce qui influence l'épingle ou son infobulle. Identique → on ne touche à rien.
+    const sig = JSON.stringify([p.lat, p.lng, p.title, p.type, p.mode, p.flash, p.status, p.photo, iconOf(p), color, ink,
+      cls, badge, mine, store.votingAgs.has(p.id), problems[0]?.message ?? null]);
+    const prev = shown.get(p.id);
+    if (prev && prev.sig === sig) { prev.p = p; continue; }
+    const zIndexOffset = TYPES[p.type].alert || problems.length ? 1000 : cls.includes('pin-selected') ? 500 : 0;
+    // Infobulle : un élément DOM (créé par h(), donc texte échappé), avec de vraies icônes.
+    const tip = h('span', { class: 'tip-line' },
       problems.length ? icon('circle-alert', 14) : null,
       mine === 'going' ? icon('check', 14) : mine === 'providing' ? icon('package', 14) : null,
-      // Les morceaux de texte non vides, séparés par « · ».
       h('span', null, [
         mine === 'going' ? 'Tu y vas' : mine === 'providing' ? 'Tu fournis du matos' : null,
         problems.length ? problems[0].message : null,
         p.title,
-      ].filter(Boolean).join(' · '))), { direction: 'top', className: 'pin-tip' });
-    // Clic sur l'épingle : on prévient main.ts (fiche du point ou ajout au trajet).
-    m.on('click', () => onPick(p));
+      ].filter(Boolean).join(' · ')));
+    if (prev) {
+      // Épingle existante qui a changé : on met à jour sur place (position, icône, ordre, infobulle).
+      prev.m.setLatLng([p.lat, p.lng]);
+      prev.m.setIcon(markerIcon(p, { cls, badge }));
+      prev.m.setZIndexOffset(zIndexOffset);
+      prev.m.setTooltipContent(tip);
+      prev.p = p;
+      prev.sig = sig;
+      continue;
+    }
+    // Nouvelle épingle. keyboard + title : atteignable au clavier, avec un titre pour les lecteurs d'écran.
+    const m = L.marker([p.lat, p.lng], { icon: markerIcon(p, { cls, badge }), riseOnHover: true, zIndexOffset, keyboard: true, title: p.title });
+    m.bindTooltip(tip, { direction: 'top', className: 'pin-tip' });
+    const rec: Shown = { m, p, sig };
+    // Clic : on passe la version À JOUR du point (rec.p est remplacé à chaque rendu).
+    m.on('click', () => onPick(rec.p));
     markers.addLayer(m);
+    shown.set(p.id, rec);
+  }
+  // Points qui ne sont plus visibles (supprimés, filtrés, expirés) : on retire leur épingle.
+  for (const [id, rec] of shown) {
+    if (!seen.has(id)) { markers.removeLayer(rec.m); shown.delete(id); }
   }
 }
 

@@ -195,11 +195,15 @@ function photoPicker(current: { existing: string | null; blob: Blob | null }, on
       toast('Impossible de lire cette image.', 'err');
     }
   });
+  // Adresse locale de l'aperçu en cours (pour pouvoir la libérer).
+  let preview: string | null = null;
   const render = () => {
-    // URL.createObjectURL crée une adresse locale temporaire pour afficher le blob
-    // sans l'envoyer. (On ne la libère jamais avec revokeObjectURL : petite fuite
-    // mémoire, sans gravité pour quelques photos.)
-    const src = current.blob ? URL.createObjectURL(current.blob) : current.existing ? photoUrl(current.existing) : null;
+    // URL.createObjectURL crée une adresse locale temporaire pour afficher le blob sans l'envoyer.
+    // Le navigateur garde l'image en mémoire tant que l'adresse existe : on libère la précédente
+    // (revokeObjectURL) avant d'en créer une nouvelle.
+    if (preview) { URL.revokeObjectURL(preview); preview = null; }
+    if (current.blob) preview = URL.createObjectURL(current.blob);
+    const src = preview ?? (current.existing ? photoUrl(current.existing) : null);
     // Deux affichages : avec photo (aperçu + Changer / Retirer) ou sans (gros bouton).
     if (src) {
       wrap.replaceChildren(
@@ -442,11 +446,10 @@ function openPointForm(d: Draft) {
       // personnalisées (--c), on lui dit d'accepter cet objet tel quel.
       type: 'button', class: `type-tile${t === d.type ? ' on' : ''}`, style: { '--c': TYPES[t].color, '--ink': TYPES[t].ink } as Record<string, string>,
       'aria-pressed': String(t === d.type),
-      // Changer de type remet la couleur au défaut du nouveau type, et recalcule
-      // « toute la journée » si l'utilisateur n'y a pas touché.
+      // Changer de type GARDE la couleur personnalisée si on en a choisi une (avant, elle était
+      // remise à zéro sans prévenir), et recalcule « toute la journée » si l'utilisateur n'y a pas touché.
       onclick: () => {
         d.type = t;
-        d.color = null;
         if (!d.allDayTouched) d.allDay = !!TYPES[t].allDay;
         render();
       },
@@ -672,7 +675,10 @@ function openPointForm(d: Draft) {
 //   - existing : l'alerte à modifier (absente en création) ;
 //   - presetPos : position déjà connue (ex. retour du choix sur la carte).
 // Sans existing ni presetPos, on lance tout de suite la localisation GPS.
-export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos) {
+/** Ce qu'on a déjà saisi, à reporter quand le formulaire est rouvert (choix sur la carte, Danger ↔ Police). */
+interface AlertCarry { title?: string; description: string; duration: number; photo: { existing: string | null; blob: Blob | null } }
+
+export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos, carry?: AlertCarry) {
   const meta = TYPES[type];
   // État local du formulaire (comme le Draft, en plus simple).
   const state = {
@@ -682,11 +688,11 @@ export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos
     source: existing || presetPos ? 'map' : 'gps',
     locating: false,
     // Durée de visibilité par défaut : 30 min.
-    duration: 30 as number,
-    // Titre par défaut : le premier problème prédéfini pour ce type et cet espace.
-    title: existing?.title ?? alertPresets(type, store.space)[0] ?? meta.label,
-    description: existing?.description ?? '',
-    photo: { existing: existing?.photo ?? null, blob: null as Blob | null },
+    duration: carry?.duration ?? 30,
+    // Titre : celui déjà saisi, sinon celui de l'alerte, sinon le premier problème prédéfini.
+    title: carry?.title ?? existing?.title ?? alertPresets(type, store.space)[0] ?? meta.label,
+    description: carry?.description ?? existing?.description ?? '',
+    photo: carry?.photo ?? { existing: existing?.photo ?? null, blob: null as Blob | null },
   };
 
   const body = h('div', { class: 'form' });
@@ -738,11 +744,12 @@ export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos
   // rouvre un formulaire tout neuf avec la position choisie.
   // Attention : le titre et la durée déjà saisis sont perdus à ce moment-là
   // (le nouvel appel repart des valeurs par défaut).
+  // On rouvre en REPORTANT ce qui a été saisi (titre, durée, précisions, photo) : avant, tout était perdu.
   const chooseOnMap = async () => {
     sheet.close();
     const pos = await pickLocation({ title: `Où est le ${meta.label.toLowerCase()} ?`, color: meta.color, initial: state.pos });
     // Si l'utilisateur annule (pos null), on garde la position précédente.
-    openAlertForm(type, existing, pos ?? state.pos ?? undefined);
+    openAlertForm(type, existing, pos ?? state.pos ?? undefined, { title: state.title, description: state.description, duration: state.duration, photo: state.photo });
   };
 
   // Champ titre libre (on peut écrire autre chose que les propositions).
@@ -756,7 +763,11 @@ export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos
   const switchToPolice = !existing && (type === 'danger' || type === 'police') && typeInSpace('police', store.space) ? segmented<AlertType>([
     { value: 'danger', label: 'Danger', icon: 'siren' },
     { value: 'police', label: 'Police / CRS', icon: 'police' },
-  ], type, (t) => { sheet.close(); openAlertForm(t, undefined, state.pos ?? undefined); }, `seg-alert seg-${type}`) : null;
+  ], type, (t) => {
+    sheet.close();
+    // Le titre dépend du type (propositions différentes) : on ne reporte que le reste.
+    openAlertForm(t, undefined, state.pos ?? undefined, { description: state.description, duration: state.duration, photo: state.photo });
+  }, `seg-alert seg-${type}`) : null;
 
   // Assemblage du formulaire d'alerte.
   clear(body,
@@ -819,9 +830,9 @@ export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos
   if (!state.pos) locate();
 }
 
-// durLabel() : minutes → texte court. 30 → « 30 min », 120 → « 2 h ».
-// Attention : 90 donnerait « 1.5 h » (pas prévu, aucune durée proposée ne vaut 90).
-export const durLabel = (m: number) => (m < 60 ? `${m} min` : `${m / 60} h`);
+// durLabel() : minutes → texte court. 30 → « 30 min », 120 → « 2 h », 90 → « 1 h 30 ».
+export const durLabel = (m: number) =>
+  m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m / 60} h`;
 
 // On réexporte closeSheet (de sheet.ts) pour les modules qui importent déjà forms.ts.
 export { closeSheet };

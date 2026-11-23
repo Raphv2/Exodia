@@ -245,12 +245,13 @@ async function share() {
   const legs = googleLegs();
   const text = ['Trajet de collage :', ...pts.map((p, i) => `${i + 1}. ${p.title}`), '', ...legs.map((l, i) => `${legs.length > 1 ? `Partie ${i + 1} : ` : ''}${l.url}`)].join('\n');
   if (navigator.share) {
-    // Si l'utilisateur annule le partage, on tombe dans le catch et on passe à la
-    // copie. (Effet de bord : annuler copie quand même le texte.)
-    try { await navigator.share({ title: 'Trajet de collage', text }); return; } catch { /* annulé */ }
+    // Annulation volontaire (AbortError) : on s'arrête là. Autre erreur (partage indisponible) : on copie.
+    try { await navigator.share({ title: 'Trajet de collage', text }); return; }
+    catch (e) { if ((e as DOMException).name === 'AbortError') return; }
   }
-  await navigator.clipboard?.writeText(text);
-  toast('Trajet copié : colle-le dans une conversation.', 'ok');
+  // Le presse-papier peut manquer (http, vieux navigateur) ou refuser : on ne dit « copié » que si c'est vrai.
+  try { await navigator.clipboard.writeText(text); toast('Trajet copié : colle-le dans une conversation.', 'ok'); }
+  catch { toast('Copie impossible sur ce navigateur.', 'err'); }
 }
 
 // ---------- Rendu ----------

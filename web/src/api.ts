@@ -68,7 +68,9 @@ async function req<T>(method: string, url: string, body?: unknown, raw?: Blob): 
     throw new ApiError(0, 'Pas de connexion. Vérifie ton réseau.');
   }
   // On ne lit la réponse en JSON que si le serveur dit que c'en est ; sinon objet vide.
-  const data = res.headers.get('content-type')?.includes('json') ? await res.json() : {};
+  // .catch : un corps annoncé JSON mais invalide (proxy en panne qui renvoie du HTML…) donne un objet
+  // vide au lieu d'une exception brute ; le code HTTP suffit alors à produire le bon message.
+  const data = res.headers.get('content-type')?.includes('json') ? await res.json().catch(() => ({})) : {};
   // `res.ok` = code HTTP entre 200 et 299.
   if (!res.ok) {
     // Session expirée ou appareil révoqué : on le signale (sauf pour /me, qui sert justement à tester
@@ -97,12 +99,14 @@ export const api = {
   // Chat chiffré de bout en bout (le serveur ne voit que des clés publiques et des messages chiffrés)
   // Publier ma clé publique ; lire l'état (membres, dernière époque, clés emballées pour moi).
   chatKey: (publicKey: unknown) => req('PUT', '/chat/key', { publicKey }),
-  chatState: () => req<{ members: ChatMember[]; lastEpoch: { id: number; members: { id: string; key: string }[] } | null; keys: ChatEpochKey[] }>('GET', '/chat/state'),
+  chatState: () => req<{ members: ChatMember[]; lastEpoch: { id: number; createdAt: number; members: { id: string; key: string }[] } | null; keys: ChatEpochKey[] }>('GET', '/chat/state'),
   // Créer une nouvelle époque : la clé de conversation emballée (chiffrée) pour chaque appareil membre.
   chatEpoch: (o: { wraps: { deviceId: string; wrapped: string; iv: string; recipientKey: string }[]; senderKey: string }) => req<{ epochId: number }>('POST', '/chat/epochs', o),
   // Messages, éventuellement plus anciens qu'une date `before` (pour charger l'historique par pages).
   // Gabarit imbriqué : on n'ajoute `?before=…` à l'adresse que si `before` est fourni.
-  chatMessages: (before?: number) => req<{ messages: ChatMessage[] }>('GET', `/chat/messages${before ? `?before=${before}` : ''}`),
+  // Curseurs « date:id » : before = remonter l'historique, after = rattraper ce qui est arrivé depuis.
+  chatMessages: (q: { before?: string; after?: string } = {}) =>
+    req<{ messages: ChatMessage[]; page: number }>('GET', `/chat/messages${q.before ? `?before=${q.before}` : q.after ? `?after=${q.after}` : ''}`),
   chatSend: (o: { epochId: number; iv: string; ciphertext: string }) => req<{ id: string; createdAt: number }>('POST', '/chat/messages', o),
   chatDelete: (id: string) => req('DELETE', `/chat/messages/${id}`),
 
@@ -137,7 +141,8 @@ export const api = {
   openBallot: (id: string, choice: number) => req<{ vote: Vote }>('POST', `/public/votes/${id}/open-ballot`, { choice }),
 
   // Points de la carte : lire, créer, modifier, changer l'état, rattacher un blocage à un blocus.
-  points: () => req<{ points: Point[] }>('GET', '/points'),
+  // `space` : ne demander que les points de cet espace (moins de données à télécharger).
+  points: (space?: Space) => req<{ points: Point[] }>('GET', space ? `/points?space=${space}` : '/points'),
   createPoint: (p: PointInput) => req<{ point: Point }>('POST', '/points', p),
   updatePoint: (id: string, p: PointInput) => req<{ point: Point }>('PUT', `/points/${id}`, p),
   // `Point['status']` : réutilise exactement le type du champ status (un état ou null).

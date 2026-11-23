@@ -34,7 +34,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { db } from './db';
 // rateLimit : limiteur de tentatives par adresse IP ; sha256 : fonction de hachage (voir auth.ts).
-import { hasSpace, newId, rateLimit, sha256, type DeviceRow } from './auth';
+import { hasSpace, isHttps, newId, optionalDevice, rateLimit, readCookie, sha256, spacesOf, type DeviceRow } from './auth';
 import { broadcast } from './events';
 // VOTE_RADII : distances autorisées (25, 50, 100, 200, 500, 0) ; DEFAULT_VOTE_RADIUS : 50 m.
 import { VOTE_RADII, DEFAULT_VOTE_RADIUS, type Vote, type VoteResult } from '../shared/model';
@@ -190,20 +190,11 @@ function presenceError(pos: z.infer<typeof posSchema>, ag: PointLite, radius: nu
 // Ainsi une même personne ne peut pas voter une fois dans l'app et une fois sur la page publique.
 /** Clé du votant : l'appareil de l'app s'il est connecté, sinon un cookie « votant » (créé au besoin). */
 function voterKey(req: Request, res: Response, device?: DeviceRow): string {
-  // Préfixe 'd:' = appareil de l'app.
-  if (device) return `d:${device.id}`;
-  // L'en-tête Cookie brut, ex. "terrain_sid=abc; terrain_voter=xyz".
-  const header = req.headers.cookie ?? '';
-  // Expression régulière : cherche « terrain_sid=... » en début d'en-tête ou après un « ; »,
-  // et capture la valeur jusqu'au prochain « ; ». `?.[1]` = le groupe capturé, s'il y en a un.
-  const sid = /(?:^|;\s*)terrain_sid=([^;]+)/.exec(header)?.[1];
-  if (sid) {
-    // Même vérification que requireDevice : on hache le jeton et on cherche un appareil non révoqué.
-    const d = db.prepare('SELECT id FROM devices WHERE token_hash = ? AND revoked_at IS NULL').get(sha256(decodeURIComponent(sid))) as { id: string } | undefined;
-    if (d) return `d:${d.id}`;
-  }
+  // Préfixe 'd:' = appareil de l'app (fourni par la route, ou cookie de session de l'app présent).
+  const d = device ?? optionalDevice(req);
+  if (d) return `d:${d.id}`;
   // `let` car on peut la remplacer juste en dessous.
-  let v = /(?:^|;\s*)terrain_voter=([^;]+)/.exec(header)?.[1];
+  let v = readCookie(req, VOTER_COOKIE) ?? undefined;
   // Pas de cookie, ou un cookie à la forme suspecte : on en crée un nouveau.
   if (!v || !/^[A-Za-z0-9_-]{20,80}$/.test(v)) {
     // 24 octets aléatoires encodés en base64url (lettres, chiffres, - et _) : impossible à deviner.
@@ -213,23 +204,34 @@ function voterKey(req: Request, res: Response, device?: DeviceRow): string {
     res.cookie(VOTER_COOKIE, v, {
       httpOnly: true, sameSite: 'strict', path: '/', maxAge: 400 * 86400 * 1000,
       // secure (cookie uniquement en HTTPS) si la connexion est en HTTPS, directement ou derrière un proxy.
-      secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
+      secure: isHttps(req),
     });
   }
   // On stocke l'empreinte du cookie, pas le cookie : quelqu'un qui lirait la base ne pourrait pas se faire passer pour ce votant.
   return `v:${sha256(v)}`;
 }
 
+/** Clé du votant SI elle existe déjà (sans créer de cookie) : pour savoir si quelqu'un a voté. */
+function existingVoterKey(req: Request): string | null {
+  const d = optionalDevice(req);
+  if (d) return `d:${d.id}`;
+  const v = readCookie(req, VOTER_COOKIE);
+  return v && /^[A-Za-z0-9_-]{20,80}$/.test(v) ? `v:${sha256(v)}` : null;
+}
+
+/** Ce votant a-t-il un bulletin dans ce vote ? */
+const hasBallot = (voteId: string, key: string | null) =>
+  !!key && !!db.prepare('SELECT 1 FROM ballots WHERE vote_id = ? AND voter_key = ?').get(voteId, key);
+
 // Tire un code à 5 chiffres pas déjà utilisé par un vote ouvert (jusqu'à 50 essais).
-function newCode(): string {
+function newCode(): string | null {
   for (let i = 0; i < 50; i++) {
     // crypto.randomInt(0, 100000) : nombre de 0 à 99999 ; padStart(5, '0') : 42 → "00042".
     const code = String(crypto.randomInt(0, 100000)).padStart(5, '0');
     if (!getOpenByCode(code)) return code;
   }
-  // Après 50 échecs (presque impossible sauf s'il y a des dizaines de milliers de votes ouverts) :
-  // l'exception remonte et Express répond une erreur 500.
-  throw new Error('Plus de code disponible');
+  // Après 50 échecs (presque impossible sauf s'il y a des dizaines de milliers de votes ouverts).
+  return null;
 }
 
 // Logique commune aux trois façons de voter. Entrées : le vote, l'AG, la clé du votant, l'index choisi,
@@ -267,9 +269,13 @@ const canRun = (me: DeviceRow, ag: PointLite) => hasSpace(me, ag.space) && (ag.c
 // GET /votes/open : tous les votes ouverts des espaces de l'appareil.
 /** Tous les votes ouverts de mes espaces (accès rapide : bandeau de l'Agenda, badge sur la carte). */
 votes.get('/votes/open', (req, res) => {
-  // Les 100 plus récents, tous espaces confondus ; le tri par espace est fait juste après en JavaScript.
-  const rows = db.prepare("SELECT * FROM votes WHERE status = 'open' ORDER BY created_at DESC LIMIT 100").all() as unknown as VoteRow[];
   const me = req.device!;
+  // Filtre par espace DANS la requête (avant le LIMIT) : avant, le LIMIT 100 s'appliquait à tous
+  // les espaces et des votes de mon espace pouvaient manquer. Les `?` sont générés selon le nombre
+  // d'espaces de l'appareil (1 ou 2), et remplis par spacesOf(me).
+  const spaces = spacesOf(me);
+  const rows = (spaces.length ? db.prepare(`SELECT v.* FROM votes v JOIN points p ON p.id = v.point_id
+    WHERE v.status = 'open' AND p.space IN (${spaces.map(() => '?').join(',')}) ORDER BY v.created_at DESC LIMIT 100`).all(...spaces) : []) as unknown as VoteRow[];
   // flatMap : chaque vote donne [] (on l'écarte) ou [un élément] (on le garde). C'est un « filter + map » en un.
   const out = rows.flatMap((v) => {
     const ag = getPoint(v.point_id);
@@ -313,9 +319,11 @@ votes.post('/points/:id/votes', (req, res) => {
   // 403 : seul·e l'organisateur·rice ou un admin.
   if (!canRun(req.device!, ag)) return res.status(403).json({ error: 'Seul·e l\'organisateur·rice de l\'AG ou un admin peut lancer un vote.' });
   const id = newId();
-  // newCode() est appelé directement dans l'INSERT : il tire un code libre à cet instant.
+  // Un code libre à cet instant ; null si (cas extrême) aucun n'a été trouvé → 503, réessayer plus tard.
+  const code = newCode();
+  if (!code) return res.status(503).json({ error: 'Trop de votes ouverts en même temps : clos-en un et réessaie.' });
   db.prepare('INSERT INTO votes (id, point_id, question, options, code, radius, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, ag.id, body.data.question, JSON.stringify(body.data.options), newCode(), body.data.radius ?? DEFAULT_VOTE_RADIUS, req.device!.id, Date.now());
+    .run(id, ag.id, body.data.question, JSON.stringify(body.data.options), code, body.data.radius ?? DEFAULT_VOTE_RADIUS, req.device!.id, Date.now());
   broadcast('votes', { id, pointId: ag.id, by: req.device!.id }, ag.space);
   // full: true : la personne qui vient de lancer le vote reçoit le code à afficher dans la salle.
   res.status(201).json({ vote: voteDto(getVote(id)!, { full: true }) });
@@ -371,15 +379,21 @@ votes.post('/votes/:id/ballot', (req, res) => {
 // Routeur public : monté sur /api/public SANS requireDevice. req.device n'existe pas ici,
 // donc chaque route doit se protéger elle-même (code, position, limite de tentatives).
 export const publicVotes = Router();
-// 5 chiffres = 100 000 codes : on limite fortement les essais pour empêcher de les deviner.
-// 15 requêtes par minute et par IP. Attention : c'est UN seul compteur partagé par toutes les routes
-// qui utilisent tryLimit (lookup + ballot + open-ballot cumulés).
-const tryLimit = rateLimit(15, 60_000);
+// 5 chiffres = 100 000 codes : on limite les essais pour empêcher de les deviner. Mais pendant une AG,
+// toute la salle partage souvent la MÊME adresse IP (Wi-Fi du lieu, 4G de l'opérateur) : un simple
+// « 15 requêtes par minute et par IP » bloquait des gens qui tapaient le bon code. D'où trois compteurs :
+//  - codeGuessLimit : ne compte que les codes FAUX (réponse 404), par IP : 20 erreurs / 10 min.
+//    Les bons codes ne consomment rien ; deviner 100 000 codes à ce rythme prendrait des mois.
+//  - voterLimit : par votant (cookie), 20 requêtes / minute : un même navigateur ne peut pas marteler.
+//  - ipLimit : filet de sécurité très large par IP (une salle entière tient dedans).
+const codeGuessLimit = rateLimit(20, 10 * 60_000, { countIf: (s) => s === 404, message: 'Trop de codes faux. Attends quelques minutes et vérifie le code affiché.' });
+const voterLimit = rateLimit(20, 60_000, { key: (req) => `voter:${readCookie(req, VOTER_COOKIE) ?? req.ip ?? 'unknown'}` });
+const ipLimit = rateLimit(600, 60_000);
 
 // POST /public/votes/lookup : corps { code, lat?, lng?, accuracy? }.
 // tryLimit est placé avant le gestionnaire : c'est un middleware, il s'exécute d'abord et peut répondre 429.
 /** Trouver un vote par son code, si l'on est sur place. Rien n'est révélé de l'AG sauf son titre. */
-publicVotes.post('/votes/lookup', tryLimit, (req, res) => {
+publicVotes.post('/votes/lookup', ipLimit, codeGuessLimit, voterLimit, (req, res) => {
   // Le code doit faire exactement 5 chiffres (^ début, \d{5} cinq chiffres, $ fin).
   const body = posSchema.extend({ code: z.string().regex(/^\d{5}$/, 'Le code fait 5 chiffres') }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.issues[0]?.message ?? 'Données invalides' });
@@ -400,7 +414,7 @@ publicVotes.post('/votes/lookup', tryLimit, (req, res) => {
 /** Voter sans l'app. */
 // POST /public/votes/ballot : corps { code, choice, lat?, lng?, accuracy? }. Voter sans l'app.
 // Le code et la position sont revérifiés : on ne fait pas confiance au fait que lookup a été appelé avant.
-publicVotes.post('/votes/ballot', tryLimit, (req, res) => {
+publicVotes.post('/votes/ballot', ipLimit, codeGuessLimit, voterLimit, (req, res) => {
   const body = posSchema.extend({ code: z.string().regex(/^\d{5}$/), choice: z.number().int() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Données invalides' });
   const v = getOpenByCode(body.data.code);
@@ -443,7 +457,7 @@ publicVotes.get('/votes/open', (req, res) => {
 
 /** Voter sans code, sur un vote ouvert à tous. */
 // POST /public/votes/:id/open-ballot : corps { choice }. Pas de code ni de position : seulement si isOpenToAll.
-publicVotes.post('/votes/:id/open-ballot', tryLimit, (req, res) => {
+publicVotes.post('/votes/:id/open-ballot', ipLimit, voterLimit, (req, res) => {
   const body = z.object({ choice: z.number().int() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Données invalides' });
   const v = getVote(req.params.id);
@@ -456,12 +470,51 @@ publicVotes.post('/votes/:id/open-ballot', tryLimit, (req, res) => {
   res.json({ vote: { ...voteDto(getVote(v.id)!, { full: false, voterKey: key }), code: null } });
 });
 
-// GET /public/votes/:id/result : pas de code demandé ; l'id du vote (aléatoire, long) sert de « secret ».
-/** Résultat d'un vote (seulement une fois clos), pour la personne qui a voté sans l'app. */
+// GET /public/votes/:id/result : le résultat, seulement pour qui a le droit de le voir.
+/**
+ * Résultat d'un vote (compteurs seulement une fois clos), pour la personne qui a voté sans l'app.
+ * Avant, l'id suffisait : n'importe qui le connaissant voyait la question d'une AG interne.
+ * Maintenant il faut : avoir voté dans ce vote (cookie votant ou appareil), OU que l'AG soit
+ * publique côté Mouvement. Sinon 404, comme si le vote n'existait pas.
+ */
 publicVotes.get('/votes/:id/result', (req, res) => {
   const v = getVote(req.params.id);
-  if (!v) return res.status(404).json({ error: 'Vote introuvable' });
+  const ag = v && getPoint(v.point_id);
+  const isPublic = !!ag && ag.type === 'ag' && ag.space === 'mvt' && !!ag.public;
+  if (!v || !(isPublic || hasBallot(v.id, existingVoterKey(req)))) return res.status(404).json({ error: 'Vote introuvable' });
   // Les compteurs seulement si le vote est clos ; sinon null (pas de résultat partiel).
   const out: VoteResult = { id: v.id, status: v.status, question: v.question, options: JSON.parse(v.options), counts: v.status === 'closed' ? counts(v.id, JSON.parse(v.options).length) : null };
   res.json({ result: out });
 });
+
+// ====================================================================================
+// Clôture automatique
+// ====================================================================================
+
+/** Délai après la fin de l'AG avant de clore ses votes encore ouverts (le temps de finir de compter). */
+const AUTO_CLOSE_AFTER_END = 2 * 3600_000;
+/** Pour une AG sans heure de fin connue : un vote ouvert depuis plus de 24 h est clos. */
+const AUTO_CLOSE_MAX_AGE = 24 * 3600_000;
+
+/**
+ * Ferme les votes qui ne devraient plus être ouverts. Appelée chaque minute par index.ts.
+ * Avant, un vote restait ouvert pour toujours si personne ne le fermait, même des jours après l'AG,
+ * ou si son AG avait changé de type entre-temps. Cas fermés :
+ *  - le point n'est plus une AG (type modifié) ;
+ *  - l'AG est terminée depuis plus de 2 h ;
+ *  - l'AG n'a pas d'heure de fin et le vote est ouvert depuis plus de 24 h.
+ */
+export function closeStaleVotes() {
+  const now = Date.now();
+  const rows = db.prepare(`SELECT v.id, v.point_id, p.space FROM votes v JOIN points p ON p.id = v.point_id
+    WHERE v.status = 'open' AND (
+      p.type != 'ag'
+      OR (p.ends_at IS NOT NULL AND p.ends_at < ?)
+      OR (p.ends_at IS NULL AND v.created_at < ?)
+    )`).all(now - AUTO_CLOSE_AFTER_END, now - AUTO_CLOSE_MAX_AGE) as { id: string; point_id: string; space: string }[];
+  const close = db.prepare("UPDATE votes SET status = 'closed', closed_at = ? WHERE id = ? AND status = 'open'");
+  for (const r of rows) {
+    close.run(now, r.id);
+    broadcast('votes', { id: r.id, pointId: r.point_id }, r.space);
+  }
+}

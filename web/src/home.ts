@@ -19,6 +19,7 @@ import { openSheet } from './sheet';
 import { addBasemap } from './basemap';
 // Briques réutilisées depuis le module archive : une carte d'élément et une frise chronologique.
 import { itemCard, timeline } from './archive';
+import { choicePicker } from './votes';
 import { h, icon, clear, toast, dayLong, time } from './ui';
 import type { PublicAg, Vote } from '../../shared/model';
 
@@ -137,14 +138,11 @@ function voteCard(v: Vote, agTitle: string): HTMLElement {
         // Déjà voté : on rappelle le choix (texte échappé par h(), aucun risque même si l'option contient du HTML).
         ? h('div', { class: 'home-voted' }, icon('check', 18), h('span', null, `Tu as voté « ${vote.options[vote.myChoice!]} ». Les résultats s'afficheront à la clôture.`))
         // Pas encore voté : un bouton par option ; i = numéro de l'option, envoyé au serveur.
-        : h('div', { class: 'home-choices' }, vote.options.map((o, i) => h('button', { class: 'btn btn-yellow', type: 'button', onclick: async (e: Event) => {
-            // On désactive le bouton cliqué pour éviter un double vote pendant la requête.
-            (e.currentTarget as HTMLButtonElement).disabled = true;
-            // Succès : on redessine avec le vote renvoyé par le serveur (désormais avec myChoice).
+        // Choisir, puis confirmer (choicePicker, votes.ts) : un toucher ne vote plus directement.
+        : h('div', { class: 'home-choices' }, choicePicker(vote.options, 'btn btn-yellow', async (i) => {
             try { render((await api.openBallot(vote.id, i)).vote); toast('A voté !', 'ok', 3500, 'vote'); }
-            // Échec : message d'erreur, puis on redessine l'état précédent (ce qui réactive les boutons).
-            catch (err) { toast((err as ApiError).message, 'err', 5000); render(vote); }
-          } }, o))),
+            catch (err) { toast((err as ApiError).message, 'err', 5000); throw err; }
+          })),
       h('span', { class: 'home-fine' }, `${vote.total} vote${vote.total > 1 ? 's' : ''} · vote indicatif, ouvert à tous sans compte · choix anonyme`),
     );
   };
@@ -198,9 +196,9 @@ function drawMap(el: HTMLElement, ags: PublicAg[]) {
   void addBasemap(map, 'mvt');
   // Un rond rouge par AG. circleMarker : rayon en pixels (reste de la même taille quel que soit le zoom).
   const pts = ags.map((a) => L.circleMarker([a.lat, a.lng], { radius: 10, color: '#fff', weight: 3, fillColor: '#a30006', fillOpacity: 1 })
-    // bindTooltip avec une CHAÎNE : Leaflet l'insère comme HTML. On retire donc < > & du titre
-    // pour éviter toute injection de HTML (le titre vient d'un utilisateur).
-    .bindTooltip(a.title.replace(/[<>&]/g, ''), { direction: 'top' }).addTo(map));
+    // Infobulle : un élément DOM créé par h(), donc le titre (écrit par un utilisateur) est
+    // toujours traité comme du texte, jamais comme du HTML.
+    .bindTooltip(h('span', null, a.title), { direction: 'top' }).addTo(map));
   // featureGroup permet de calculer le rectangle englobant de tous les ronds ; pad(0.4) = 40 % de marge.
   map.fitBounds(L.featureGroup(pts).getBounds().pad(0.4), { maxZoom: 16 });
 }

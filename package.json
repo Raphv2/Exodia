@@ -10,7 +10,8 @@
     "start": "tsx server/index.ts",
     "invite-admin": "tsx server/cli-invite.ts",
     "backup": "tsx server/backup.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --disable-warning=ExperimentalWarning --import tsx --test tests/*.test.ts"
   },
   "engines": {
     "node": ">=22.13"

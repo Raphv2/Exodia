@@ -28,7 +28,7 @@ import { api, ApiError } from './api';
 import { store } from './store';
 import { openSheet } from './sheet';
 import { getPosition, type Pos } from './geo';
-import { h, icon, clear, toast, relative } from './ui';
+import { h, icon, clear, toast, relative, onDetach } from './ui';
 import { chips } from './forms';
 import { VOTE_RADII, DEFAULT_VOTE_RADIUS, voteRadiusLabel, type Point, type Vote } from '../../shared/model';
 
@@ -52,6 +52,53 @@ const DEFAULT_OPTIONS = ['Pour', 'Contre', 'Abstention'];
 //   - total : nombre total de votes ;
 //   - mine : l'indice de mon choix (pour le marquer d'une coche), ou null.
 // Sortie : un <ul> de barres, ou un simple <p> « N votes pour l'instant ».
+/**
+ * Pourcentages entiers qui font TOUJOURS 100 au total (méthode « du plus fort reste ») : on prend
+ * la partie entière de chaque pourcentage, puis on distribue les points manquants aux choix qui ont
+ * la plus grande partie décimale. Avec un simple arrondi, 3 choix à égalité donnaient 33+33+33 = 99 %.
+ */
+export function percents(counts: number[]): number[] {
+  const sum = counts.reduce((a, b) => a + b, 0);
+  if (!sum) return counts.map(() => 0);
+  const raw = counts.map((c) => (c / sum) * 100);
+  const out = raw.map(Math.floor);
+  let missing = 100 - out.reduce((a, b) => a + b, 0);
+  // Indices triés par partie décimale décroissante.
+  const order = raw.map((r, i) => [r - Math.floor(r), i] as const).sort((a, b) => b[0] - a[0]);
+  for (const [, i] of order) { if (missing <= 0) break; out[i]++; missing--; }
+  return out;
+}
+
+/**
+ * Boutons de choix en DEUX temps : toucher un choix le sélectionne, puis un bouton « Confirmer »
+ * envoie le vote. Avant, un seul toucher votait définitivement (facile de se tromper de bouton).
+ * Entrées : les choix, la classe CSS des boutons, et l'action à faire une fois confirmé (qui peut
+ * échouer : le bouton se réactive alors).
+ */
+export function choicePicker(options: string[], btnClass: string, onConfirm: (i: number) => Promise<void>): HTMLElement {
+  const wrap = h('div', { class: 'vote-picker' });
+  let picked: number | null = null;
+  const render = () => {
+    const confirm = h('button', { class: 'btn btn-primary btn-block vote-confirm', type: 'button', disabled: picked == null }, icon('check', 18),
+      picked == null ? 'Choisis une réponse' : `Confirmer : « ${options[picked]} »`) as HTMLButtonElement;
+    confirm.onclick = async () => {
+      if (picked == null) return;
+      confirm.disabled = true;
+      try { await onConfirm(picked); } catch { /* l'appelant a déjà affiché l'erreur */ }
+      if (confirm.isConnected) confirm.disabled = false;
+    };
+    clear(wrap,
+      h('div', { class: 'vote-choices' }, options.map((o, i) => h('button', {
+        class: `${btnClass}${picked === i ? ' is-picked' : ''}`, type: 'button', 'aria-pressed': String(picked === i),
+        onclick: () => { picked = i; render(); },
+      }, o))),
+      confirm,
+      h('p', { class: 'field-hint' }, 'Ton vote est définitif une fois confirmé.'));
+  };
+  render();
+  return wrap;
+}
+
 export function resultBars(options: string[], counts: number[] | null, total: number, mine: number | null = null) {
   if (!counts) {
     return h('p', { class: 'vote-total' }, icon('users', 16), `${total} vote${total > 1 ? 's' : ''} pour l'instant`);
@@ -60,10 +107,10 @@ export function resultBars(options: string[], counts: number[] | null, total: nu
   const max = Math.max(1, ...counts);
   // Somme des voix. reduce additionne tous les éléments en partant de 0.
   const sum = counts.reduce((a, b) => a + b, 0);
+  // Pourcentages qui totalisent exactement 100 (voir percents).
+  const pcts = percents(counts);
   return h('ul', { class: 'vote-bars' }, options.map((o, i) => {
-    // Pourcentage arrondi ; 0 si personne n'a voté.
-    // Attention : les arrondis peuvent donner un total de 99 % ou 101 %.
-    const pct = sum ? Math.round((counts[i] / sum) * 100) : 0;
+    const pct = pcts[i];
     // Classe « top » sur le(s) choix en tête (à égalité, plusieurs barres) ;
     // « mine » sur mon choix.
     return h('li', { class: `vote-bar${counts[i] === max && sum ? ' top' : ''}${mine === i ? ' mine' : ''}` },
@@ -104,10 +151,6 @@ export function votesSection(p: Point): HTMLElement {
   // load() : récupère les votes de l'AG et redessine le bloc.
   const load = async () => {
     if (!alive) return;
-    // Nettoyage « paresseux » : si le bloc a déjà été affiché (mounted) mais n'est
-    // plus dans la page (fiche fermée), on se désabonne (off) au lieu de
-    // recharger. On ne le détecte qu'au prochain événement 'votes'.
-    if (!wrap.isConnected && wrap.dataset.mounted) { alive = false; off(); return; }
     try {
       // canRun : le serveur dit si j'ai le droit de lancer / clore des votes ici.
       const { votes, canRun } = await api.votes(p.id);
@@ -126,6 +169,9 @@ export function votesSection(p: Point): HTMLElement {
   // store.on renvoie une fonction de désabonnement, gardée dans « off ».
   // « void » signale qu'on ignore volontairement la Promise renvoyée par load().
   const off = store.on('votes', () => void load());
+  // Dès que le bloc quitte la page (fiche fermée), on se désabonne. Avant, on ne s'en rendait compte
+  // qu'au prochain événement « votes » (petite fuite en attendant).
+  onDetach(wrap, () => { alive = false; off(); });
   void load();
   return wrap;
 }
@@ -217,11 +263,17 @@ export function openKahoot(voteId: string) {
   const footer = h('div', { class: 'kahoot-footer' });
   // alive passe à false à la fermeture : un rechargement en cours ne redessine plus rien.
   let alive = true;
+  // Numéro de la dernière demande : si plusieurs rechargements se croisent (votes en rafale), seule
+  // la réponse à la DERNIÈRE demande est affichée (avant, une réponse ancienne arrivée en retard
+  // pouvait remplacer une plus récente et afficher un total périmé).
+  let seq = 0;
   // render() : recharge le vote depuis le serveur et redessine tout.
   const render = async () => {
     if (!alive) return;
+    const mine = ++seq;
     try {
       const { vote: v } = await api.vote(voteId);
+      if (mine !== seq || !alive) return;
       const open = v.status === 'open';
       clear(body,
         h('p', { class: 'kahoot-question' }, v.question),
@@ -265,26 +317,22 @@ export function openAppVote(v: Vote) {
     title: 'Voter',
     body: h('div', { class: 'form' },
       h('p', { class: 'kahoot-question' }, v.question),
-      h('div', { class: 'vote-choices' }, v.options.map((o, i) => h('button', { class: 'btn btn-outline btn-block vote-choice', type: 'button', onclick: async (e: Event) => {
-        // currentTarget = le bouton cliqué (et pas un éventuel enfant du bouton).
-        const b = e.currentTarget as HTMLButtonElement;
-        b.disabled = true;
+      // Choisir, puis confirmer (choicePicker).
+      choicePicker(v.options, 'btn btn-outline btn-block vote-choice', async (i) => {
         // Position seulement si le vote a une condition de distance.
         const pos = v.radius ? await hereOrToast() : null;
-        // Si une position est requise mais introuvable, on réactive le bouton et on s'arrête.
-        if (v.radius && !pos) { b.disabled = false; return; }
+        if (v.radius && !pos) throw new Error('position');
         try {
           // i = indice du choix. Le serveur refuse si trop loin ou si déjà voté.
           await api.ballot(v.id, i, pos);
           s.close();
           store.emit('votes');
-          // Le 4e argument de toast est l'icône affichée.
           toast('A voté !', 'ok', 3500, 'vote');
         } catch (err) {
           toast((err as ApiError).message, 'err', 6000);
-          b.disabled = false;
+          throw err;
         }
-      } }, o))),
+      }),
       h('p', { class: 'field-hint' }, v.radius ? `Ta position est vérifiée une seule fois pour ce vote (à moins de ${v.radius} m de l'AG). Un vote par appareil.` : 'Pas de condition de distance pour ce vote. Un vote par appareil.'),
     ),
   });
@@ -368,9 +416,8 @@ export function publicVotePage(back: () => void): HTMLElement {
     clear(root,
       h('p', { class: 'pv-ag' }, agTitle),
       h('h1', { class: 'splash-title pv-question' }, v.question),
-      h('div', { class: 'pv-choices' }, v.options.map((o, i) => h('button', { class: 'btn btn-yellow btn-big btn-block', type: 'button', onclick: async (e: Event) => {
-        // Désactiver le bouton cliqué (pas les autres) évite un double envoi.
-        (e.currentTarget as HTMLButtonElement).disabled = true;
+      // Choisir, puis confirmer.
+      h('div', { class: 'pv-choices' }, choicePicker(v.options, 'btn btn-yellow btn-big btn-block', async (i) => {
         try {
           // On renvoie le code (et la position éventuelle) avec le choix.
           const { vote } = await api.publicBallot(code, i, pos);
@@ -379,7 +426,7 @@ export function publicVotePage(back: () => void): HTMLElement {
           // En cas d'erreur (vote clos entre-temps, trop loin…), retour à l'étape 1 avec le message.
           askCode((err as ApiError).message);
         }
-      } }, o))),
+      })),
       h('p', { class: 'splash-fine' }, 'Un seul vote par appareil. Ton choix est anonyme.'),
     );
   };

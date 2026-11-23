@@ -29,12 +29,10 @@ import fs from 'node:fs';
 // `path` = manipulation de chemins de fichiers, portable Windows / Linux (gère les / et \).
 import path from 'node:path';
 
-// Dossier des données. `??` (« nullish coalescing ») : si la variable d'environnement DATA_DIR
-// n'est pas définie (undefined), on prend 'data'. `path.resolve` transforme ce chemin relatif
-// en chemin absolu à partir du dossier où le serveur a été lancé.
-export const DATA_DIR = path.resolve(process.env.DATA_DIR ?? 'data');
-// Sous-dossier où sont rangées les photos envoyées par les utilisateurs.
-export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+// Dossier des données et des fichiers envoyés : définis dans paths.ts (partagé avec backup.ts),
+// et ré-exportés ici pour que les autres fichiers continuent d'écrire `import { UPLOAD_DIR } from './db'`.
+import { DATA_DIR, UPLOAD_DIR } from './paths';
+export { DATA_DIR, UPLOAD_DIR };
 // Crée le dossier (et DATA_DIR au passage grâce à `recursive: true`) s'il n'existe pas.
 // Sans `recursive`, mkdir planterait si le dossier parent manque ou si le dossier existe déjà.
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -235,3 +233,27 @@ db.exec('CREATE INDEX IF NOT EXISTS points_parent ON points(parent_id)');
 // Le WHERE ne cible que les blocages encore en mode 'event' : relancée, la requête ne touche plus rien.
 db.exec(`UPDATE points SET mode = 'fixe', starts_at = NULL, ends_at = NULL, recurrence = 'none', recurrence_until = NULL,
          expires_at = NULL, status = COALESCE(status, 'vide') WHERE type = 'blocage' AND mode = 'event'`);
+
+/**
+ * Exécute `fn` dans une transaction : soit TOUTES ses écritures sont appliquées, soit AUCUNE
+ * (si `fn` lève une erreur, tout est annulé). Évite qu'un plantage au milieu d'une suite de
+ * requêtes laisse la base à moitié modifiée.
+ * SAVEPOINT plutôt que BEGIN : les savepoints s'imbriquent, on peut donc appeler tx() depuis une
+ * fonction elle-même déjà dans tx() sans erreur « transaction déjà ouverte ».
+ */
+let txDepth = 0;
+export function tx<T>(fn: () => T): T {
+  const name = `sp${++txDepth}`;
+  db.exec(`SAVEPOINT ${name}`);
+  try {
+    const out = fn();
+    db.exec(`RELEASE ${name}`);
+    return out;
+  } catch (e) {
+    db.exec(`ROLLBACK TO ${name}`);
+    db.exec(`RELEASE ${name}`);
+    throw e;
+  } finally {
+    txDepth--;
+  }
+}

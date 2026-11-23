@@ -14,7 +14,7 @@
        flash, filtres, notifications, réglages, espaces de chaque appareil.
    12. Écrans d'accès neutres, puis THÈME MOUVEMENT (:root[data-space='mvt']).
    13. Votes (façon Kahoot), Archive, Chat chiffré, correctifs iPhone,
-       page d'accueil publique, bandeau des votes.
+       page d'accueil publique, bandeau des votes, vérification des membres du chat.
 
    Deux règles pour bien lire ce fichier :
    - Spécificité : un #id pèse plus qu'une .classe ou un [attribut], qui pèsent plus
@@ -54,6 +54,24 @@
   /* Fond de la page et fond des panneaux. */
   --bg: #ffffff;
   --panel: #faf8fd;
+
+  /* Couleurs FIXES : le thème Mouvement ne les redéfinit pas, elles gardent donc la même valeur
+     dans les deux espaces. On les range ici plutôt que de les réécrire en dur dans les règles.
+     Attention : --navy vaut la même chose que --ink, mais --ink change en Mouvement (et le JS la
+     redéfinit sur chaque épingle), alors que --navy ne change jamais. Pareil pour --violet-lfi
+     et --violet. */
+  --navy: #00232c;        /* bleu nuit (texte sur jaune des « flash », notifications) */
+  --violet-lfi: #7b13d6;  /* violet de la Campagne, même affiché depuis l'espace Mouvement */
+  --warning: #ffc400;     /* jaune orangé des alertes (différent de --yellow, plus citron) */
+  --police: #1546e0;      /* bleu des alertes police / CRS */
+  --red-dark: #b3141b;    /* rouge foncé : textes d'erreur, notification d'erreur */
+  --red-text: #c41d1d;    /* rouge des boutons « danger » en texte / contour */
+  --green-dark: #0b6e4f;  /* vert foncé : « public », « vous avez voté » */
+  --slate: #5b6770;       /* gris ardoise : blocus vidé */
+  --bordeaux: #5c1033;    /* bordeaux des blocus */
+  --band: #1b1b1b;        /* noir du bandeau Mouvement et de la page d'accueil publique */
+  --home-ink: #141414;    /* encre noire de la page d'accueil publique */
+  --splash-dark: #111316; /* anthracite des écrans d'accès neutres */
 
   /* Polices : le navigateur prend la première disponible, les suivantes sont des replis.
      Les fichiers de police sont embarqués via les paquets @fontsource importés dans main.ts. */
@@ -101,7 +119,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 a { color: var(--violet); }
 /* .sr-only : texte invisible à l'écran mais lu par les lecteurs d'écran (accessibilité).
-   Technique classique : 1 px de côté et contenu rogné par clip. */
+   Technique classique : 1 px de côté et contenu rogné par clip. Le !important est voulu
+   (pratique standard pour cette classe utilitaire) : aucune autre règle ne doit pouvoir
+   remettre l'élément dans le flux de la page. */
 .sr-only { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* :focus-visible : contour jaune épais uniquement quand on navigue au clavier (pas au clic). */
 :focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
@@ -124,9 +144,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
   text-decoration: none; white-space: nowrap; user-select: none;
   transition: background 0.15s, transform 0.1s, box-shadow 0.15s, opacity 0.15s;
 }
-/* Effet d'enfoncement au clic ; bouton désactivé pâli (redéfini plus bas, voir « Toujours là »). */
+/* Effet d'enfoncement au clic (le bouton désactivé est plus bas, après .btn.loading). */
 .btn:active { transform: translateY(1px) scale(0.99); }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
 /* Variantes de couleur : -primary (action principale), -yellow, -outline (contour), -light,
    -ghost (transparent), -danger (rouge), -warning (orange), -done (vert).
    color-mix(in srgb, A 14%, B) mélange deux couleurs en CSS : ici 14 % de violet dans du blanc. */
@@ -141,10 +160,10 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 .btn-ghost { background: transparent; color: var(--ink-soft); }
 .btn-danger { background: var(--red); color: #fff; }
 .btn-danger:hover { background: #dc2c2c; }
-.btn-warning { background: #ffc400; color: var(--ink); }
+.btn-warning { background: var(--warning); color: var(--ink); }
 .btn-warning:hover { background: #ffb700; }
 .btn-done { background: var(--green); color: #fff; }
-.btn-text-danger { color: #c41d1d; }
+.btn-text-danger { color: var(--red-text); }
 /* Tailles : petit, grand, pleine largeur. */
 .btn-small { min-height: 34px; padding: 0 12px; font-size: 15px; gap: 6px; }
 .btn-big { min-height: 56px; font-size: 21px; }
@@ -152,6 +171,12 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 /* Bouton en cours d'action : non cliquable (pointer-events: none) et icône qui tourne. */
 .btn.loading { pointer-events: none; opacity: 0.8; }
 .btn.loading .ico { animation: spin 0.8s linear infinite; }
+/* Bouton désactivé : pâli, curseur « interdit ». Placé APRÈS .btn.loading exprès : les deux
+   règles ont le même poids (une classe + une pseudo-classe = une classe + une classe), donc
+   si un bouton est à la fois « loading » et désactivé, c'est cette opacité-ci qui gagne.
+   (Avant, cette règle existait en double : 0.45 ici et 0.55 plus bas ; seule 0.55 s'appliquait.)
+   Exception : .btn.sticky-cta:disabled (section Trajet) pèse plus lourd et la remplace. */
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* Bouton rond qui ne contient qu'une icône. inline-grid + place-items: center centre
    le contenu horizontalement ET verticalement en une seule ligne. */
@@ -202,16 +227,18 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
    navigateur mobile qui apparaissent et disparaissent. grid + place-items centre le contenu.
    Le padding ajoute les zones de sécurité de l'iPhone (encoche en haut, barre en bas).
    Fond : trois couches superposées (la première écrite est au-dessus) : rayures fines,
-   halo clair en haut à gauche, dégradé violet. NB : ce fond est remplacé plus bas par
-   une version grise neutre (section « Écrans d'accès »). */
+   halo plus clair en haut à gauche, dégradé anthracite. Gris neutre exprès : un écran
+   d'accès ne doit pas révéler à quel espace (Campagne ou Mouvement) on appartient.
+   (Avant, il y avait ici un fond violet, remplacé plus bas par ce gris : il n'était jamais
+   visible, on n'a gardé que le gris. Voir aussi la section « Écrans d'accès ».) */
 .splash {
   min-height: 100dvh; display: grid; place-items: center;
   padding: calc(32px + var(--safe-t)) 20px calc(32px + var(--safe-b));
   color: #fff;
   background:
-    repeating-linear-gradient(-55deg, rgba(255,255,255,0.035) 0 18px, transparent 18px 36px),
-    radial-gradient(120% 80% at 0% 0%, #9433ec 0%, transparent 60%),
-    linear-gradient(160deg, var(--violet) 0%, var(--violet-deep) 100%);
+    repeating-linear-gradient(-55deg, rgba(255,255,255,0.025) 0 18px, transparent 18px 36px),
+    radial-gradient(120% 80% at 0% 0%, #3a3f46 0%, transparent 60%),
+    linear-gradient(160deg, #24272c 0%, var(--splash-dark) 100%);
 }
 /* Colonne centrale de 440px maximum. clamp(min, idéal, max) : la taille du titre suit la
    largeur de l'écran (11vw = 11 % de la largeur) sans descendre sous 40px ni dépasser 58px. */
@@ -228,10 +255,11 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 .splash-step { display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,0.1); border-left: 4px solid var(--yellow); padding: 12px 14px; }
 .splash-step span { font-family: var(--font-title); font-weight: 800; font-size: 30px; color: var(--yellow); line-height: 1; width: 18px; }
 .splash-step p { margin: 0; font-weight: 600; }
-/* Formulaire d'invitation. Les !important de .input-big lui permettent de passer devant
-   .input, définie plus loin dans le fichier avec le même poids (elle gagnerait sinon). */
+/* Formulaire d'invitation. Le champ porte les deux classes « input input-big ».
+   .input.input-big (deux classes) pèse plus lourd que .input seule, définie plus loin :
+   elle gagne donc sans avoir besoin de !important (qui était utilisé avant). */
 .join-form { display: grid; gap: 12px; }
-.input-big { font-size: 19px !important; padding: 16px !important; border: 0 !important; }
+.input.input-big { font-size: 19px; padding: 16px; border: 0; }
 
 /* ---------- Coque de l'app ---------- */
 
@@ -400,7 +428,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 }
 .fab:active { transform: scale(0.96); }
 /* Variantes : Alerte (orange), Danger (rouge), Ajouter (plus grand, violet). */
-.fab-warning { background: #ffc400; color: var(--ink); }
+.fab-warning { background: var(--warning); color: var(--ink); }
 .fab-danger { background: var(--red); color: #fff; }
 .fab-add { height: 60px; padding: 0 24px 0 18px; font-size: 22px; background: var(--violet); color: #fff; }
 
@@ -474,9 +502,10 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 
 /* Viseur de placement */
 /* Viseur de placement. Pendant le placement d'un nouveau point (map.ts ajoute .picking sur
-   .map-wrap), on cache ce qui gêne. !important pour gagner sur les display: flex définis
-   par d'autres règles (ex. .route-hint en mode Trajet). */
-.picking .map-filters, .picking .fabs, .picking .route-hint { display: none !important; }
+   .map-wrap), on cache ce qui gêne. Il faut gagner sur les display: flex d'autres règles,
+   dont la plus lourde est « .app[data-view='route'] .route-hint » (3 classes/attributs).
+   « .app .map-wrap.picking .route-hint » en compte 4 : elle gagne sans !important. */
+.app .map-wrap.picking .map-filters, .app .map-wrap.picking .fabs, .app .map-wrap.picking .route-hint { display: none; }
 /* Viseur au centre exact de la carte ; pointer-events: none : il laisse passer les gestes
    vers la carte en dessous. */
 .picker { position: absolute; left: 50%; top: 50%; z-index: 700; pointer-events: none; }
@@ -554,15 +583,26 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 /* Focus : bordure violette + halo (box-shadow) à la place du contour par défaut. */
 .input:focus { outline: none; border-color: var(--violet); box-shadow: 0 0 0 4px color-mix(in srgb, var(--violet) 15%, transparent); }
 .input::placeholder { color: var(--muted); opacity: 1; }
-/* textarea redimensionnable seulement en hauteur. Date / heure : padding réduit
-   (voir aussi les correctifs iPhone en fin de fichier). */
+/* textarea redimensionnable seulement en hauteur. */
 textarea.input { resize: vertical; min-height: 84px; }
-input[type='date'].input, input[type='time'].input { padding: 8px 10px; min-width: 0; }
+/* Champs date / heure : padding réduit. Le reste corrige Safari sur iPhone, qui leur donne
+   une largeur et une apparence propres qui dépassent le cadre : appearance: none retire le
+   style natif, display: block + width/max-width 100% les gardent dans leur colonne.
+   (Cette règle était auparavant coupée en deux, ici et en fin de fichier.) */
+input[type='date'].input, input[type='time'].input {
+  padding: 8px 10px; min-width: 0;
+  -webkit-appearance: none; appearance: none; display: block; width: 100%; max-width: 100%;
+  min-height: 48px; text-align: left; background-color: #fff;
+}
+/* Pseudo-élément propre à Safari qui contient la valeur affichée : aligné à gauche. */
+input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input::-webkit-date-and-time-value { text-align: left; margin: 0; }
 
 /* .seg : « contrôle segmenté » (boutons accolés, un seul actif), ex. Point fixe | Événement.
-   grid-auto-columns: 1fr : tous les segments ont la même largeur. overflow: hidden coupe
-   les coins des segments pour suivre l'arrondi du cadre. */
-.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 2px solid var(--violet); border-radius: var(--r); overflow: hidden; background: #fff; }
+   grid-auto-columns: minmax(0, 1fr) : tous les segments ont la même largeur ET peuvent
+   rétrécir sous la largeur de leur texte (avec « 1fr » seul, un libellé long élargirait sa
+   colonne et ferait déborder le cadre). overflow: hidden coupe les coins des segments pour
+   suivre l'arrondi du cadre. */
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 2px solid var(--violet); border-radius: var(--r); overflow: hidden; background: #fff; }
 .seg-btn {
   display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 8px;
   border: 0; background: transparent; color: var(--violet);
@@ -576,7 +616,9 @@ input[type='date'].input, input[type='time'].input { padding: 8px 10px; min-widt
 
 /* Puces sélectionnables (choix multiples) qui passent à la ligne (flex-wrap). */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+/* inline-flex + align-items + gap : icône et texte alignés côte à côte. */
 .chip {
+  display: inline-flex; align-items: center; gap: 6px;
   min-height: 38px; padding: 0 14px; border-radius: 999px;
   border: 2px solid var(--line); background: #fff; color: var(--ink);
   font-weight: 600; font-size: 14.5px;
@@ -643,7 +685,7 @@ input[type='date'].input, input[type='time'].input { padding: 8px 10px; min-widt
 .loc-status div { display: flex; flex-direction: column; }
 .loc-status div span { font-weight: 500; font-size: 13px; color: var(--muted); }
 .loc-status.ok .ico { color: var(--green); }
-.loc-status.err { color: #c41d1d; }
+.loc-status.err { color: var(--red-text); }
 .loc-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .loc-actions .btn { background: #fff; min-width: 0; padding: 4px 8px; white-space: normal; line-height: 1.05; }
 
@@ -853,7 +895,7 @@ details.more[open] summary::before { content: '– '; }
 .tip div span { color: var(--ink-soft); font-size: 14.5px; }
 .tip-ico { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; flex: none; color: #fff; }
 .tip-add { background: var(--violet); }
-.tip-warning { background: #ffc400; color: var(--ink); }
+.tip-warning { background: var(--warning); color: var(--ink); }
 .tip-agenda { background: #e5007d; }
 .tip-route { background: var(--green); }
 
@@ -876,7 +918,7 @@ details.more[open] summary::before { content: '– '; }
 }
 .toast.in { opacity: 1; transform: translateY(0); }
 .toast-ok .ico { color: #4be3a6; }
-.toast-err { background: #b3141b; }
+.toast-err { background: var(--red-dark); }
 
 /* ---------- Animations ---------- */
 
@@ -917,18 +959,25 @@ details.more[open] summary::before { content: '– '; }
   /* Sur mobile, la pastille « moi » ne montre que l'avatar. */
   .me-name { display: none; }
   .me-chip { padding: 4px; }
+  /* Trajet : la liste prend toute la place du panneau (c'est lui qui défile). */
+  .app[data-panel='route'] .pick-list { max-height: none; }
+  /* Lignes de la liste plus hautes : plus faciles à toucher. (Ces deux règles viennent d'un
+     second bloc « max-width: 899.98px » qui était en fin de fichier, « corrections téléphone ».) */
+  .pick-row { min-height: 60px; }
 }
 
 /* Très petits téléphones (< 380px) : grille de 3 colonnes ramenée à 2 (le 1er champ prend
-   toute la ligne), boutons flottants plus petits, boutons du viseur réorganisés
-   (order: 3 envoie « Annuler » en dernier). */
+   toute la ligne), boutons flottants plus petits, segments et grands boutons plus serrés.
+   (Ce bloc regroupe l'ancien bloc « max-width: 380px » de la section anti-débordement.
+   Les boutons du viseur sous 380px sont gérés par le bloc « max-width: 520px » plus bas,
+   qui s'applique aussi ici et l'emportait déjà.) */
 @media (max-width: 379.98px) {
   .grid-3 { grid-template-columns: 1fr 1fr; }
   .grid-3 > :first-child { grid-column: 1 / -1; }
   .fab { font-size: 17px; height: 44px; }
   .fab-add { height: 54px; }
-  .picker-actions { grid-template-columns: 1fr 1fr; }
-  .picker-actions .btn-ghost { grid-column: 1 / -1; order: 3; min-height: 36px; }
+  .seg-btn { font-size: 15px; padding: 0 4px; gap: 4px; }
+  .btn-big { font-size: 17px; }
 }
 
 /* ---------- Ordinateur ---------- */
@@ -997,13 +1046,13 @@ details.more[open] summary::before { content: '– '; }
   display: flex; flex-direction: column; gap: 6px; padding: 12px 14px;
   background: #fff0f0; border: 2px solid var(--red); border-radius: var(--r-lg);
 }
-.problem-head { display: flex; align-items: center; gap: 8px; color: #b3141b; }
+.problem-head { display: flex; align-items: center; gap: 8px; color: var(--red-dark); }
 .problem-head strong { font-family: var(--font-title); font-weight: 800; font-size: 21px; text-transform: uppercase; line-height: 1.05; }
 .problem-meta { font-size: 13px; color: var(--ink-soft); }
 .problem-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 
 /* Bouton à contour rouge. */
-.btn-outline-danger { background: #fff; color: #c41d1d; border-color: var(--red); }
+.btn-outline-danger { background: #fff; color: var(--red-text); border-color: var(--red); }
 .btn-outline-danger:hover { background: #fff0f0; }
 
 /* Petite étiquette « Problème » qui clignote dans la carte d'agenda. align-self: flex-start :
@@ -1011,7 +1060,7 @@ details.more[open] summary::before { content: '– '; }
    fin reprennent le style normal de l'élément. */
 .ev-problem {
   display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-top: 4px;
-  background: #fff; color: #b3141b; padding: 2px 8px; border-radius: 999px;
+  background: #fff; color: var(--red-dark); padding: 2px 8px; border-radius: 999px;
   font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
   animation: problem-chip 1.1s ease-in-out infinite;
 }
@@ -1020,7 +1069,7 @@ details.more[open] summary::before { content: '– '; }
 /* ---------- Blocus et blocages ---------- */
 /* Statuts d'un blocus : tenu (vert), vidé (gris), levé (rouge). */
 .status-btn.on.st-tenu { background: var(--green); border-color: var(--green); color: #fff; }
-.status-btn.on.st-vide { background: #5B6770; border-color: #5B6770; color: #fff; }
+.status-btn.on.st-vide { background: var(--slate); border-color: var(--slate); color: #fff; }
 .status-btn.on.st-leve { background: var(--red); border-color: var(--red); color: #fff; }
 /* Bouton de statut sur deux lignes (statut + précision en petit). */
 .status-two { display: flex; flex-direction: column; align-items: center; gap: 1px; }
@@ -1040,12 +1089,12 @@ details.more[open] summary::before { content: '– '; }
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 11px;
   border: 2px solid var(--line); border-radius: var(--r); background: #fff; color: var(--ink); text-align: left;
 }
-.link-row.has-problem { border-color: #F53B3B; color: #b3141b; }
+.link-row.has-problem { border-color: var(--red); color: var(--red-dark); }
 .link-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .link-main span { font-size: 13px; color: var(--muted); }
-.link-row.has-problem .link-main span { color: #b3141b; font-weight: 600; }
+.link-row.has-problem .link-main span { color: var(--red-dark); font-weight: 600; }
 /* Petit rond d'état de chaque blocage lié. */
-.link-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: #5B6770; }
+.link-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--slate); }
 .link-dot.st-tenu { background: var(--green); }
 .link-dot.st-leve { background: var(--red); }
 /* Case à cocher dessinée (carré) dans une ligne de choix ; remplie de violet si cochée. */
@@ -1056,25 +1105,22 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 
 /* ---------- Alerte police / CRS : épingle bleue qui clignote ---------- */
 /* Bouton bleu « Police ». */
-.btn-police { background: #1546E0; color: #fff; }
+.btn-police { background: var(--police); color: #fff; }
 .btn-police:hover { background: #0f38b8; }
 /* steps(1, end) : pas de fondu, l'épingle saute d'une couleur à l'autre, comme un gyrophare. */
 .pin-police .pin-head { animation: police-blink 0.9s steps(1, end) infinite; }
 .pin-police .pin-head::after { animation-duration: 0.9s; }
 @keyframes police-blink {
-  0% { background: #1546E0; box-shadow: 0 0 0 3px rgba(21,70,224,0.45), 0 0 14px 4px rgba(21,70,224,0.7); }
+  0% { background: var(--police); box-shadow: 0 0 0 3px rgba(21,70,224,0.45), 0 0 14px 4px rgba(21,70,224,0.7); }
   50% { background: #5C8BFF; box-shadow: 0 0 0 3px rgba(92,139,255,0.25), -2px 3px 7px rgba(0,0,0,0.35); }
 }
 /* Contrôle segmenté du niveau d'alerte : rouge, ou bleu pour la police. */
 .seg-alert { border-color: var(--red); margin-bottom: 2px; }
 .seg-alert .seg-btn { color: var(--red); }
 .seg-alert .seg-btn.on { background: var(--red); color: #fff; }
-.seg-alert.seg-police { border-color: #1546E0; }
-.seg-alert.seg-police .seg-btn { color: #1546E0; }
-.seg-alert.seg-police .seg-btn.on { background: #1546E0; color: #fff; }
-
-/* Complète la règle .chip définie plus haut (icône + texte alignés). */
-.chip { display: inline-flex; align-items: center; gap: 6px; }
+.seg-alert.seg-police { border-color: var(--police); }
+.seg-alert.seg-police .seg-btn { color: var(--police); }
+.seg-alert.seg-police .seg-btn.on { background: var(--police); color: #fff; }
 
 /* ---------- Matériel à prévoir ---------- */
 /* Saisie du matériel : champ + bouton « Ajouter » (1fr auto = le champ prend le reste). */
@@ -1085,7 +1131,8 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* Matériel listé en petites pilules ; dans l'agenda, une seule ligne tronquée par « … ». */
 .material-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .material-list li { padding: 5px 11px; border-radius: 999px; background: var(--violet-tint); color: var(--ink); font-weight: 600; font-size: 14px; }
-.ev-material { display: flex; align-items: center; gap: 5px; font-size: 12.5px; opacity: 0.9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Ligne « participants / matos » de la carte d'agenda : 12px entre les deux groupes. */
+.ev-material { display: flex; align-items: center; gap: 12px; font-size: 12.5px; opacity: 0.9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Engagements « j'apporte » : en-tête, lignes de matériel (orange si personne ne l'apporte). */
 .pledges { display: flex; flex-direction: column; gap: 12px; }
@@ -1100,8 +1147,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .material-main span { font-size: 13px; color: var(--muted); }
 .material-row.missing .material-main span { color: #b45309; font-weight: 600; }
 .material-row .btn { flex: none; min-height: 38px; padding: 0 10px; font-size: 15px; }
-/* Redéfinit l'écart de .ev-material (plus haut dans cette section). */
-.ev-material { gap: 12px !important; }
+/* Chaque groupe de .ev-material (icône + nombre), serré à 4px. */
 .ev-material > span { display: inline-flex; align-items: center; gap: 4px; }
 
 /* ---------- Mes engagements (visibles par moi seul) ---------- */
@@ -1134,11 +1180,13 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .pin-zap {
   position: absolute; left: -6px; top: -6px; width: 18px; height: 18px; border-radius: 50%;
   display: grid; place-items: center; z-index: 2;
-  background: var(--yellow); color: #00232C;
+  background: var(--yellow); color: var(--navy);
   border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.35);
 }
-/* !important : ces icônes doivent rester foncées même si une règle plus précise les colore. */
-.pin-zap .ico, .ev-flash .ico, .tag-flash .ico { color: #00232C !important; }
+/* Ces icônes restent bleu nuit (--navy, fixe), même dans une épingle où le JS redéfinit
+   --ink. Pas besoin de !important : aucune autre règle ne colore ces icônes-là (la règle
+   jaune « .pin-flash .pin-head .ico » vise la tête de l'épingle, pas le petit éclair). */
+.pin-zap .ico, .ev-flash .ico, .tag-flash .ico { color: var(--navy); }
 /* Épingle d'un flash : la couleur du type en plus sombre, l'icône du type en jaune. */
 .pin-flash .pin-head { background: color-mix(in srgb, var(--c) 55%, #000); }
 .pin-flash .pin-head .ico { color: var(--yellow); }
@@ -1152,8 +1200,8 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
   content: ''; position: absolute; inset: -7px; border-radius: 50%;
   border: 3px solid var(--yellow); animation: pulse 1.3s ease-out infinite;
 }
-.ev-flash { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px; background: var(--yellow); color: #00232C; font-weight: 800; font-size: 12px; text-transform: uppercase; }
-.tag-flash { background: var(--yellow); color: #00232C; }
+.ev-flash { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px; background: var(--yellow); color: var(--navy); font-weight: 800; font-size: 12px; text-transform: uppercase; }
+.tag-flash { background: var(--yellow); color: var(--navy); }
 .flash-section .section-title .ico { color: var(--ink); }
 
 /* Choix du genre d'événements affichés dans l'agenda. */
@@ -1169,8 +1217,8 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* ---------- Écrans étroits : rien ne doit dépasser en largeur ---------- */
 /* Anti-débordement : chaque segment ou bouton peut rétrécir (min-width: 0) et son texte se
    tronque ; max-width: 100% : un bouton n'est jamais plus large que son parent.
-   Ces règles complètent celles du début (même sélecteur : la dernière gagne). */
-.seg { grid-auto-columns: minmax(0, 1fr); }
+   Ces règles complètent celles du début (même sélecteur : la dernière gagne).
+   (Les colonnes rétrécissables de .seg sont maintenant directement dans sa règle, section 7.) */
 .seg-btn { min-width: 0; }
 .seg-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn { max-width: 100%; }
@@ -1178,11 +1226,8 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* Les enfants des grilles peuvent rétrécir (sinon un mot long élargit toute la colonne). */
 .grid-2 > *, .grid-3 > * { min-width: 0; }
 .grid-2 .btn { padding-left: 10px; padding-right: 10px; }
-/* Très petits écrans : segments et grands boutons plus serrés. */
-@media (max-width: 380px) {
-  .seg-btn { font-size: 15px; padding: 0 4px; gap: 4px; }
-  .btn-big { font-size: 17px; }
-}
+/* Très petits écrans (segments et grands boutons plus serrés) : voir le bloc
+   « max-width: 379.98px » de la section 10. */
 
 /* ---------- Point fixe ou événement : deux formes d'épingle ---------- */
 /* Événement : carré arrondi posé sur une petite pointe (le point fixe garde la goutte). */
@@ -1211,14 +1256,20 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .fchip:not(.on):not(.fchip-today) { opacity: 0.75; }
 /* Téléphone (<= 600px) : pastilles en colonne, icône au-dessus et nom court en dessous. */
 @media (max-width: 600px) {
-  /* Sur téléphone : l'icône, et son nom en petit dessous (l'icône seule n'était pas assez claire). */
-  .map-filters { gap: 5px; }
+  /* Sur téléphone : l'icône, et son nom en petit dessous (l'icône seule n'était pas assez claire).
+     La barre de filtres défile : un fondu à droite (mask-image : le dégradé rend transparente
+     la fin de la barre) montre qu'il y a d'autres filtres à faire glisser. */
+  .map-filters {
+    gap: 5px; padding-right: 18px;
+    -webkit-mask-image: linear-gradient(to right, #000 88%, transparent); mask-image: linear-gradient(to right, #000 88%, transparent);
+  }
   .fchip, .fchip.fchip-today {
     flex-direction: column; justify-content: center; gap: 2px;
     width: auto; min-width: 48px; height: 46px; padding: 4px 6px; border-radius: 12px;
   }
   .fchip .fchip-label { display: none; }
-  .fchip .fchip-short, .fchip .fchip-today-label { display: block; font-size: 10px !important; line-height: 1; white-space: nowrap; }
+  /* (Pas besoin de !important : aucune autre règle ne donne de taille à ces libellés.) */
+  .fchip .fchip-short, .fchip .fchip-today-label { display: block; font-size: 10px; line-height: 1; white-space: nowrap; }
   .fchip .ico { width: 18px; height: 18px; }
 }
 
@@ -1227,12 +1278,12 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .toast-ico { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.18); }
 .toast-ico .ico { color: inherit; }
 .toast-err .toast-ico .ico { color: #fff; }
-.toast-warning { background: #ffc400; color: #00232C; }
+.toast-warning { background: var(--warning); color: var(--navy); }
 .toast-warning .toast-ico { background: rgba(0,35,44,0.12); }
-.toast-police { background: #1546E0; color: #fff; }
-.toast-flash { background: #00232C; color: #fff; }
+.toast-police { background: var(--police); color: #fff; }
+.toast-flash { background: var(--navy); color: #fff; }
 .toast-flash .toast-ico { background: var(--yellow); }
-.toast-flash .toast-ico .ico { color: #00232C; }
+.toast-flash .toast-ico .ico { color: var(--navy); }
 
 /* Infobulle d'épingle : icône + texte alignés. */
 .tip-line { display: inline-flex; align-items: center; gap: 5px; }
@@ -1252,9 +1303,8 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .how-far-item .ico { color: var(--violet); }
 .how-far-wait { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
 
-/* « Toujours là » verrouillé : visible mais inactif. */
-/* Redéfinit .btn:disabled du début (opacité 0.45 devient 0.55) : c'est cette valeur qui s'applique. */
-.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+/* « Toujours là » verrouillé : visible mais inactif. Il utilise le style .btn:disabled
+   défini dans la section Boutons (opacité 0.55). */
 
 /* ---------- Bouton Réglages, à côté du profil ---------- */
 /* Bouton rond des réglages dans la barre du haut, poussé à droite (margin-left: auto).
@@ -1270,19 +1320,17 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 
 /* Filtre « Blocus » : actif = couleur des blocus. */
 /* Filtre Blocus actif : bordeaux. */
-.fchip-blocus.on { background: #5C1033; color: #fff; }
+.fchip-blocus.on { background: var(--bordeaux); color: #fff; }
 .fchip-blocus.on .ico { color: #fff; }
-@media (max-width: 600px) {
-  /* La barre de filtres défile : un fondu à droite le montre. */
-  .map-filters { -webkit-mask-image: linear-gradient(to right, #000 88%, transparent); mask-image: linear-gradient(to right, #000 88%, transparent); padding-right: 18px; }
-}
+/* (Le fondu à droite de la barre de filtres sur téléphone est dans le bloc « max-width: 600px »
+   de la section « Filtres de la carte ».) */
 
 /* ---------- Équipe : espaces de chaque appareil ---------- */
 /* Étiquettes des espaces d'un appareil : Campagne (violet), Mouvement (noir), propriétaire (rouge). */
 .row-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
 .space-tag { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
-.space-lfi { background: #7B13D6; color: #fff; }
-.space-mvt { background: #1b1b1b; color: #fff; }
+.space-lfi { background: var(--violet-lfi); color: #fff; }
+.space-mvt { background: var(--band); color: #fff; }
 .owner-tag { background: #a30006; color: #fff; }
 
 /* ==========================================================================
@@ -1311,20 +1359,14 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* ==========================================================================
    Écrans d'accès : neutres (aucune couleur ni référence de l'un ou l'autre espace)
    ========================================================================== */
-/* Redéfinit le fond de .splash (le violet du début n'est donc jamais visible) : gris
-   anthracite neutre, pour qu'un écran d'accès ne révèle pas à quel espace on appartient. */
-.splash {
-  background:
-    repeating-linear-gradient(-55deg, rgba(255,255,255,0.025) 0 18px, transparent 18px 36px),
-    radial-gradient(120% 80% at 0% 0%, #3a3f46 0%, transparent 60%),
-    linear-gradient(160deg, #24272c 0%, #111316 100%);
-}
-/* Étapes, bouton jaune et logo repassés en blanc / gris. */
+/* Le fond gris anthracite neutre de .splash est défini directement dans la section 4.
+   Ici : étapes, bouton jaune et logo repassés en blanc / gris, pour la même raison
+   (un écran d'accès ne révèle pas à quel espace on appartient). */
 .splash-step { border-left-color: #fff; background: rgba(255,255,255,0.07); }
 .splash-step span { color: #fff; }
-.splash .btn-yellow { background: #fff; color: #111316; }
+.splash .btn-yellow { background: #fff; color: var(--splash-dark); }
 .splash .btn-yellow:hover { background: #e9e9e9; }
-.brand-neutral .brand-mark { background: #fff; color: #111316; transform: none; }
+.brand-neutral .brand-mark { background: #fff; color: var(--splash-dark); transform: none; }
 
 /* ==========================================================================
    Espace Mouvement : esprit journal militant
@@ -1363,7 +1405,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* Bandeau sombre, liseré rouge */
 /* Règles préfixées [data-space='mvt'] : elles ne visent que l'espace Mouvement.
    Bandeau noir avec liseré rouge (ombre sans flou de 3px), logo rouge non penché. */
-[data-space='mvt'] .topbar { background: #1b1b1b; box-shadow: 0 3px 0 var(--violet); }
+[data-space='mvt'] .topbar { background: var(--band); box-shadow: 0 3px 0 var(--violet); }
 [data-space='mvt'] .brand-mark { background: var(--violet); color: #fff; transform: none; border-radius: 2px; }
 [data-space='mvt'] .brand-text strong { font-weight: 400; letter-spacing: 0.02em; }
 /* Sous-titre du logo en étiquette blanche sur rouge ; align-self: flex-start : l'étiquette
@@ -1372,13 +1414,13 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
   align-self: flex-start; background: var(--violet); color: #fff; opacity: 1;
   padding: 2px 6px 1px; font-weight: 900; letter-spacing: 0.08em;
 }
-[data-space='mvt'] .avatar.tiny { background: #fff; color: #141414; }
+[data-space='mvt'] .avatar.tiny { background: #fff; color: var(--ink); }
 [data-space='mvt'] .space-switch button.on { color: var(--violet); }
 
 /* Titres : condensés, soulignés de rouge (au lieu du surligneur jaune) */
 /* box-shadow inset en bas = soulignement épais qui ne décale rien. */
 [data-space='mvt'] .panel-title {
-  font-weight: 400; color: #141414; background: none; padding: 0 0 4px; margin-left: 0;
+  font-weight: 400; color: var(--home-ink); background: none; padding: 0 0 4px; margin-left: 0;
   box-shadow: inset 0 -3px 0 var(--violet);
 }
 /* Fjalla One n'a qu'une graisse (400) : on la demande explicitement pour éviter le faux gras. */
@@ -1396,7 +1438,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 [data-space='mvt'] .fab { font-family: 'Lato', sans-serif; font-weight: 900; letter-spacing: 0.03em; }
 [data-space='mvt'] .navbtn { font-size: 12.5px; }
 [data-space='mvt'] .navbtn::before { border-radius: 0; }
-[data-space='mvt'] .fab-add { background: #141414; }
+[data-space='mvt'] .fab-add { background: var(--ink); }
 [data-space='mvt'] .fab-add:hover { background: var(--violet); }
 
 /* Texte de lecture : à empattements */
@@ -1408,17 +1450,17 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 
 /* Étiquettes de rubrique : blanc sur noir */
 [data-space='mvt'] .tag:not(.tag-outline):not(.tag-flash) { border-radius: 0; }
-[data-space='mvt'] .tag-outline { border-radius: 0; border-color: #141414; color: #141414; }
+[data-space='mvt'] .tag-outline { border-radius: 0; border-color: var(--ink); color: var(--ink); }
 [data-space='mvt'] .agenda-day-title.today { color: var(--violet); }
 /* .chip.on:not([style]) : puce active SANS attribut style en ligne ; les puces colorées par
    le JS (couleur du type) gardent leur couleur. */
 [data-space='mvt'] .chip { border-radius: 2px; }
-[data-space='mvt'] .chip.on:not([style]) { background: #141414; border-color: #141414; color: #fff; }
+[data-space='mvt'] .chip.on:not([style]) { background: var(--ink); border-color: var(--ink); color: #fff; }
 [data-space='mvt'] .fchip { border-radius: 4px; }
 /* Couleurs des icônes de conseils adaptées au thème. */
 [data-space='mvt'] .tip-add { background: var(--violet); }
-[data-space='mvt'] .tip-agenda { background: #141414; }
-[data-space='mvt'] .tip-route { background: #5C1033; }
+[data-space='mvt'] .tip-agenda { background: var(--ink); }
+[data-space='mvt'] .tip-route { background: var(--bordeaux); }
 
 /* Bandeau sur téléphone : marque, bascule d'espace, réglages et profil doivent tenir sur une ligne. */
 @media (max-width: 480px) {
@@ -1434,6 +1476,18 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
   /* :has() = « qui contient » : seulement si la barre du haut contient la bascule d'espace, on
      cache le nom de l'app sous 360px. Sélecteur récent (Safari 15.4+, Chrome 105+). */
   .topbar:has(.space-switch) .brand-text { display: none; }
+}
+/* Repli pour les navigateurs qui ne connaissent pas :has() (Safari avant 15.4, ex. iPhone SE
+   de 1re génération bloqués en iOS 15, Firefox avant 121). Pour eux, la règle ci-dessus est
+   ignorée en entier, et le nom de l'app pourrait pousser les réglages et le profil hors de
+   l'écran. @supports not selector(:has(*)) = « seulement si :has() N'EST PAS compris » :
+   on autorise alors le nom à rétrécir et à se couper avec « … ». Les navigateurs récents
+   ignorent ce bloc, leur affichage ne change pas. */
+@supports not selector(:has(*)) {
+  @media (max-width: 360px) {
+    .brand-text { min-width: 0; overflow: hidden; }
+    .brand-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
 }
 
 /* ==========================================================================
@@ -1492,9 +1546,11 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .btn-outline-light { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,0.6); }
 .btn-outline-light:hover { background: rgba(255,255,255,0.08); }
 .pv { display: flex; flex-direction: column; gap: 18px; }
-.pv-code { text-align: center; letter-spacing: 0.45em; font-size: 32px !important; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* Le champ du code porte « input input-big pv-code ». .input.pv-code a le même poids que
+   .input.input-big mais est écrite APRÈS : sa taille de 32px gagne (sans !important). */
+.input.pv-code { text-align: center; letter-spacing: 0.45em; font-size: 32px; font-weight: 800; font-variant-numeric: tabular-nums; }
 /* Message d'erreur, nom de l'AG, question, choix, retour. */
-.pv-error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; background: rgba(245,59,59,0.18); border-left: 4px solid #f53b3b; border-radius: 4px; }
+.pv-error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; background: rgba(245,59,59,0.18); border-left: 4px solid var(--red); border-radius: 4px; }
 .pv-ag { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.75; font-weight: 700; }
 .pv-question { font-size: clamp(30px, 8vw, 44px); }
 .pv-choices { display: flex; flex-direction: column; gap: 10px; }
@@ -1523,7 +1579,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .arch-meta { font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .arch-title { font-size: 16px; line-height: 1.25; }
 .arch-vis { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
-.arch-vis.public { background: #0B6E4F; color: #fff; }
+.arch-vis.public { background: var(--green-dark); color: #fff; }
 .arch-vis.private { background: var(--line); color: var(--ink-soft); }
 .arch-vis .ico { color: inherit; }
 .arch-img img { display: block; width: 100%; max-height: 320px; object-fit: cover; border-radius: var(--r); }
@@ -1541,13 +1597,13 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .pub { display: flex; flex-direction: column; gap: 16px; }
 .pub-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .pub-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border: 2px solid rgba(255,255,255,0.4); background: transparent; color: #fff; border-radius: 4px; font-weight: 800; }
-.pub-tabs button.on { background: #fff; color: #111316; border-color: #fff; }
+.pub-tabs button.on { background: #fff; color: var(--splash-dark); border-color: #fff; }
 .pub-tabs button .ico { color: inherit; }
 .pub-content { display: flex; flex-direction: column; gap: 10px; }
 .pub-section { display: flex; flex-direction: column; gap: 10px; }
 .pub-map { height: 260px; border-radius: 6px; overflow: hidden; }
 .pub-ags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.pub-ag { background: #fff; color: #111316; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.pub-ag { background: #fff; color: var(--splash-dark); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
 .pub-ag .btn { align-self: flex-start; }
 .pub .empty { color: #fff; }
 .pub .empty .ico { color: rgba(255,255,255,0.7); }
@@ -1598,12 +1654,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* ==========================================================================
    Corrections téléphone (retours sur iPhone)
    ========================================================================== */
-@media (max-width: 899.98px) {
-  /* Trajet : la liste prend toute la place du panneau (c'est lui qui défile). */
-  .app[data-panel='route'] .pick-list { max-height: none; }
-  /* Lignes de la liste plus hautes : plus faciles à toucher. */
-  .pick-row { min-height: 60px; }
-}
+/* (La liste du Trajet sur téléphone est réglée dans le bloc « max-width: 899.98px » de la section 10.) */
 
 /* « Nouveau point » : les boutons ne débordent plus (Ma position | Placer ici, puis Annuler). */
 @media (max-width: 520px) {
@@ -1615,13 +1666,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* Équipe : étiquettes d'espace lisibles (le texte gris des lignes ne s'y applique pas). */
 .row-main .row-tags .space-tag { color: #fff; font-size: 11px; }
 
-/* Champs date / heure sur iPhone : Safari leur donne une largeur propre qui dépasse le cadre. */
-input[type='date'].input, input[type='time'].input {
-  -webkit-appearance: none; appearance: none; display: block; width: 100%; max-width: 100%;
-  min-height: 48px; text-align: left; background-color: #fff;
-}
-/* Pseudo-élément propre à Safari qui contient la valeur affichée : aligné à gauche. */
-input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input::-webkit-date-and-time-value { text-align: left; margin: 0; }
+/* Champs date / heure sur iPhone : voir la règle input[type='date'].input (section 7). */
 
 /* Côté Mouvement : fond de carte neutre (pas de lilas LFI). */
 :root[data-space='mvt'] #map { background: #e6e4e1; }
@@ -1633,7 +1678,7 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
 /* Page d'accueil publique : fond « papier » (var(--panel)), contenu centré sur 880px au plus. */
 .home-page { min-height: 100dvh; background: var(--panel); color: var(--ink); }
 /* Bandeau collé en haut (sticky) devant tout (z-index 1000) ; il inclut la zone de l'encoche. */
-.home-band { background: #1b1b1b; color: #fff; box-shadow: 0 3px 0 var(--violet); padding: calc(10px + var(--safe-t)) 16px 10px; position: sticky; top: 0; z-index: 1000; }
+.home-band { background: var(--band); color: #fff; box-shadow: 0 3px 0 var(--violet); padding: calc(10px + var(--safe-t)) 16px 10px; position: sticky; top: 0; z-index: 1000; }
 .home-top { max-width: 880px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .home-top-actions { display: flex; gap: 8px; }
 /* Boutons du bandeau : contour blanc, ou plein rouge. */
@@ -1646,28 +1691,28 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
 .home { max-width: 880px; margin: 0 auto; padding: 28px 16px calc(44px + var(--safe-b)); display: flex; flex-direction: column; gap: 34px; }
 .home-hero { display: flex; flex-direction: column; gap: 12px; }
 /* Grand titre (taille fluide grâce à clamp), chapeau en police à empattements. */
-.home-title { margin: 0; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: clamp(44px, 11vw, 80px); line-height: 0.95; color: #141414; }
+.home-title { margin: 0; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: clamp(44px, 11vw, 80px); line-height: 0.95; color: var(--home-ink); }
 .home-lead { margin: 0; max-width: 580px; font-family: var(--font-read, serif); font-size: 18px; color: var(--ink-soft); }
 .home-section { display: flex; flex-direction: column; gap: 14px; }
 /* Intertitre souligné de rouge (ombre inset). */
-.home-h2 { margin: 0; align-self: flex-start; display: flex; align-items: center; gap: 10px; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: 28px; color: #141414; padding-bottom: 4px; box-shadow: inset 0 -3px 0 var(--violet); }
+.home-h2 { margin: 0; align-self: flex-start; display: flex; align-items: center; gap: 10px; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: 28px; color: var(--home-ink); padding-bottom: 4px; box-shadow: inset 0 -3px 0 var(--violet); }
 .home-h2 .ico { color: var(--violet); }
 .home-loading { margin: 0; color: var(--muted); }
 .home-empty { display: flex; align-items: center; gap: 10px; padding: 16px; border: 2px dashed var(--line); border-radius: var(--r-lg); color: var(--muted); font-family: var(--font-read, serif); }
 .home-empty .ico { color: var(--muted); }
 /* Carte de base de la page d'accueil ; .home-vote : bord gauche épais noir. */
-.home-card { background: #fff; color: #141414; border: 2px solid var(--line); border-radius: var(--r-lg); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.home-card { background: #fff; color: var(--home-ink); border: 2px solid var(--line); border-radius: var(--r-lg); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
 .home-meta { font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; color: var(--violet); }
 .home-q { margin: 0; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: 25px; line-height: 1.05; }
 .home-votes { display: grid; gap: 12px; }
-.home-vote { border-color: #141414; border-left-width: 6px; }
+.home-vote { border-color: var(--home-ink); border-left-width: 6px; }
 .home-choices { display: flex; flex-wrap: wrap; gap: 8px; }
 /* Boutons de vote : flex: 1 1 140px = base de 140px, ils s'élargissent pour remplir et passent
    à la ligne quand la place manque. */
-.home-choices .btn { flex: 1 1 140px; min-height: 52px; font-size: 17px; background: #141414; color: #fff; }
+.home-choices .btn { flex: 1 1 140px; min-height: 52px; font-size: 17px; background: var(--home-ink); color: #fff; }
 .home-choices .btn:hover { background: var(--violet); }
 /* Confirmation « vous avez voté », en vert. */
-.home-voted { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: var(--r); background: #e8f5ee; color: #0B6E4F; font-weight: 700; }
+.home-voted { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: var(--r); background: #e8f5ee; color: var(--green-dark); font-weight: 700; }
 .home-voted .ico { color: inherit; flex: none; margin-top: 2px; }
 .home-fine { font-size: 12.5px; color: var(--muted); }
 /* Carte publique de la page d'accueil (cette règle s'étend sur trois lignes). */
@@ -1692,7 +1737,7 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
 .home-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding-top: 18px; border-top: 2px solid var(--line); font-family: var(--font-read, serif); }
 .home-foot p { margin: 0; }
 /* Les étapes du splash réutilisées sur la page d'accueil, en version claire. */
-.home-steps .splash-step { background: var(--violet-tint); border-left-color: var(--violet); color: #141414; }
+.home-steps .splash-step { background: var(--violet-tint); border-left-color: var(--violet); color: var(--home-ink); }
 .home-steps .splash-step span { color: var(--violet); }
 /* <= 560px : boutons du bandeau réduits à leur icône (texte caché). */
 @media (max-width: 560px) {
@@ -1715,7 +1760,7 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
 
 /* Écran du code : vote déjà sur la page d'accueil (code facultatif) */
 /* Encadré vert « vote aussi ouvert sur la page d'accueil », puis code en petit. */
-.kahoot-open { display: flex; align-items: flex-start; gap: 12px; text-align: left; padding: 12px 14px; border-radius: var(--r-lg); background: #e8f5ee; color: #0B6E4F; }
+.kahoot-open { display: flex; align-items: flex-start; gap: 12px; text-align: left; padding: 12px 14px; border-radius: var(--r-lg); background: #e8f5ee; color: var(--green-dark); }
 .kahoot-open .ico { color: inherit; flex: none; margin-top: 2px; }
 .kahoot-open div { display: flex; flex-direction: column; gap: 2px; }
 .kahoot-open strong { font-size: 17px; }
@@ -1748,3 +1793,56 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
 }
 .pin-vote .ico { color: inherit; }
 @keyframes vote-pulse { 50% { transform: scale(1.18); } }
+
+/* ==========================================================================
+   Chat : vérification des membres
+   ========================================================================== */
+/* Éléments créés par chat.ts pour signaler un nouveau membre ou une clé qui a changé.
+   Couleurs : uniquement des variables ou des teintes pâles neutres, pour rester lisible
+   dans les deux thèmes (Campagne et Mouvement). */
+
+/* Conteneur du bandeau, au-dessus de la liste des messages. Vide la plupart du temps :
+   :empty le cache alors, pour qu'il ne crée pas un écart (gap) inutile dans la colonne. */
+.chat-banner:empty { display: none; }
+
+/* Bandeau d'alerte « nouveau membre » : icône, texte, bouton « Vérifier ».
+   Même allure que les autres encadrés (bord de 2px, coins var(--r-lg)), en jaune pâle comme
+   l'encadré « vote indicatif ». flex-wrap : le bouton passe à la ligne si la place manque ;
+   flex: 1 1 180px sur le texte = il prend la place restante, sur au moins 180px. */
+.chat-alert {
+  display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px 10px;
+  padding: 10px 12px; border: 2px solid #f0c96a; border-radius: var(--r-lg);
+  background: #fff4d6; color: #6b4600; font-size: 13.5px;
+}
+.chat-alert > .ico { color: inherit; flex: none; margin-top: 1px; }
+.chat-alert > span { flex: 1 1 180px; min-width: 0; }
+.chat-alert strong { font-weight: 800; }
+/* Le bouton reste à sa taille naturelle et se cale à droite (margin-left: auto). */
+.chat-alert > .btn { flex: none; margin-left: auto; }
+/* Version danger (clé changée : peut-être quelqu'un qui se fait passer pour un membre) :
+   rouge, comme l'encadré « problème signalé ». */
+.chat-alert.is-danger { border-color: var(--red); background: #fff0f0; color: var(--red-dark); }
+
+/* « Vérifié » dans la liste des membres : petit libellé vert avec une icône de bouclier.
+   align-self: flex-start : dans la ligne en colonne (flex) du membre, il garde la largeur
+   de son texte au lieu de s'étirer. */
+.chat-verified {
+  display: inline-flex; align-items: center; gap: 4px; align-self: flex-start;
+  font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--green-dark);
+}
+.chat-verified .ico { color: var(--green); }
+
+/* Petite icône orange à côté du nom de l'expéditeur : son code n'est pas encore vérifié.
+   vertical-align : l'icône se centre sur la ligne du nom (qui est du texte, pas un flex). */
+.chat-unverified { display: inline-flex; vertical-align: -2px; margin-left: 4px; color: var(--orange); cursor: help; }
+.chat-unverified .ico { color: inherit; }
+
+/* ==========================================================================
+   Vote en deux temps (choicePicker, votes.ts) : toucher un choix le sélectionne,
+   puis « Confirmer » envoie le vote.
+   ========================================================================== */
+.vote-picker { display: flex; flex-direction: column; gap: 10px; }
+/* Choix sélectionné : contour épais et coche visuelle par la couleur d'accent. */
+.vote-picker .is-picked { outline: 3px solid var(--violet); outline-offset: 2px; font-weight: 800; }
+.vote-picker .vote-confirm:disabled { opacity: 0.55; }

@@ -269,7 +269,10 @@ function showInvite(res: CreatedInvite) {
       h('div', { class: 'grid-2' },
         // Copie du lien dans le presse-papier. « ?. » : clipboard peut être absent
         // (hors https par exemple) ; le toast s'affiche quand même dans ce cas.
-        h('button', { class: 'btn btn-outline', onclick: async () => { await navigator.clipboard?.writeText(res.url); toast('Lien copié', 'ok'); } }, icon('copy', 18), 'Copier le lien'),
+        h('button', { class: 'btn btn-outline', onclick: async () => {
+          // « Lien copié » seulement si la copie a réellement marché (presse-papier absent ou refusé sinon).
+          try { await navigator.clipboard.writeText(res.url); toast('Lien copié', 'ok'); } catch { toast('Copie impossible : partage le QR code.', 'err'); }
+        } }, icon('copy', 18), 'Copier le lien'),
         // Bouton « Envoyer » (partage natif du téléphone), seulement si le navigateur
         // le permet. .catch(() => {}) : annuler le partage n'est pas une erreur.
         'share' in navigator ? h('button', { class: 'btn btn-outline', onclick: () => navigator.share({ title: 'Invitation Terrain', url: res.url }).catch(() => {}) }, icon('share-2', 18), 'Envoyer') : null,
@@ -412,7 +415,6 @@ function renameMe() {
         store.me.name = input.value.trim();
         s.close();
         render();
-        store.emit('me');
       } catch (e) { toast((e as ApiError).message, 'err'); }
     } }, 'Enregistrer'),
   });

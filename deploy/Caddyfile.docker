@@ -4,6 +4,24 @@
 {$DOMAIN} {
 	# Compresse les réponses (zstd si le navigateur le comprend, sinon gzip).
 	encode zstd gzip
+	# Taille maximale d'une requête : 20 Mo (l'archive accepte des documents jusqu'à 15 Mo,
+	# plus la marge de l'encodage). Au-delà, Caddy répond 413 sans déranger l'app.
+	request_body {
+		max_size 20MB
+	}
+	# En-têtes de réponse. L'app envoie déjà les en-têtes de sécurité (CSP, HSTS, nosniff,
+	# X-Frame-Options...) : le « ? » ne les pose QUE s'ils manquent (par exemple sur la page
+	# d'erreur 502 de Caddy quand l'app est arrêtée), donc jamais en double ni avec une autre
+	# valeur. HSTS : même valeur que l'app (1 an). Le « - » retire les en-têtes qui annoncent
+	# le logiciel utilisé (Server, Via).
+	header {
+		?Strict-Transport-Security "max-age=31536000"
+		?X-Content-Type-Options "nosniff"
+		?X-Frame-Options "DENY"
+		?Referrer-Policy "strict-origin"
+		-Server
+		-Via
+	}
 	# « terrain » est le nom du service dans docker-compose.yml : Docker le traduit en
 	# adresse du conteneur sur le réseau interne commun aux deux conteneurs.
 	reverse_proxy terrain:3180 {

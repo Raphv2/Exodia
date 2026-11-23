@@ -18,7 +18,7 @@ import {
   createElement, Bike, Calendar, CalendarDays, Camera, Car, Check, ChevronLeft, ChevronRight, Clock, Copy,
   Crosshair, Download, Footprints, House, ImagePlus, Layers, LocateFixed, LogOut, Map as MapIcon, MapPin,
   Navigation, Newspaper, Package, PaintRoller, Pencil, Plus, Presentation, QrCode, Repeat, Route, Share2,
-  ShieldCheck, Siren, Smartphone, Trash2, TriangleAlert, UserPlus, Users, UsersRound, X, ArrowRight, Timer,
+  ShieldCheck, ShieldAlert, Siren, Smartphone, Trash2, TriangleAlert, UserPlus, Users, UsersRound, X, ArrowRight, Timer,
   CircleCheck, ListChecks, Construction, Megaphone, CircleAlert, Flag, Sun, Flame, Swords, Skull, Ambulance, Ban, Shield, IdCard, Fence, Bus, FileX, EyeOff, Zap, Settings, Bell, Vote, Archive, FileText, Mail, Image as ImageIcon, StickyNote, Globe, Lock, Paperclip, MessageCircle, Send, type IconNode,
 } from 'lucide';
 
@@ -48,7 +48,7 @@ const ICONS: Record<string, IconNode> = {
   'locate-fixed': LocateFixed, 'log-out': LogOut, map: MapIcon, 'map-pin': MapPin, navigation: Navigation,
   newspaper: Newspaper, package: Package, 'paint-roller': PaintRoller, pencil: Pencil, plus: Plus,
   presentation: Presentation, 'qr-code': QrCode, repeat: Repeat, route: Route, 'share-2': Share2,
-  'shield-check': ShieldCheck, siren: Siren, smartphone: Smartphone, 'trash-2': Trash2,
+  'shield-check': ShieldCheck, 'shield-alert': ShieldAlert, siren: Siren, smartphone: Smartphone, 'trash-2': Trash2,
   'triangle-alert': TriangleAlert, 'user-plus': UserPlus, users: Users, 'users-round': UsersRound, x: X,
   'arrow-right': ArrowRight, timer: Timer, 'circle-check': CircleCheck, 'list-checks': ListChecks,
   construction: Construction, megaphone: Megaphone, 'circle-alert': CircleAlert, flag: Flag, sun: Sun, flame: Flame, police: Police,
@@ -128,7 +128,9 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props?: Props, 
       if (v == null || v === false) continue;
       // `k.slice(2)` retire « on » : 'onclick' → 'click'. Attention : le nom doit être en minuscules
       // ('onClick' donnerait l'événement 'Click', qui n'existe pas).
-      if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v as EventListener);
+      // `.toLowerCase()` : `onClick` (écriture façon React) marche aussi. Avant, il enregistrait un
+      // événement « Click » (avec majuscule), qui n'existe pas : le clic ne faisait rien, sans erreur.
+      if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v as EventListener);
       // `class` est un mot réservé en JS ; côté DOM la propriété s'appelle className.
       else if (k === 'class') el.className = String(v);
       else if (k === 'style' && typeof v === 'object') {
@@ -145,13 +147,35 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props?: Props, 
       else if (k === 'dataset' && typeof v === 'object') Object.assign(el.dataset, v);
       // Pour ces quatre-là, c'est la PROPRIÉTÉ qui compte (l'état actuel du champ), pas l'attribut
       // (qui n'est que la valeur initiale). `as any` : on sort du typage pour écrire n'importe quelle clé.
-      else if (k === 'value' || k === 'checked' || k === 'disabled' || k === 'selected') (el as any)[k] = v;
+      // `value` est appliqué APRÈS l'ajout des enfants (voir plus bas) : pour un <select>, la valeur
+      // n'existe qu'une fois ses <option> ajoutées ; appliquée avant, elle était perdue.
+      else if (k === 'value') continue;
+      else if (k === 'checked' || k === 'disabled' || k === 'selected') (el as unknown as Record<string, unknown>)[k] = v;
       // Cas général : attribut HTML (aria-label, type, href, role, placeholder…).
       else el.setAttribute(k, v === true ? '' : String(v));
     }
   }
   append(el, children);
+  if (props?.value != null) (el as unknown as { value: unknown }).value = props.value;
   return el;
+}
+
+/**
+ * Appelle `fn` une seule fois, dès que `el` est retiré de la page (fiche fermée, écran redessiné).
+ * Sert à se désabonner des événements du store au bon moment, sans attendre le prochain événement.
+ * MutationObserver : le navigateur nous prévient à chaque changement du DOM ; on vérifie alors si
+ * l'élément est toujours attaché (`isConnected`). L'observateur est arrêté aussitôt après.
+ */
+export function onDetach(el: Element, fn: () => void) {
+  let seen = false;
+  const obs = new MutationObserver(() => {
+    if (el.isConnected) { seen = true; return; }
+    // Pas encore inséré dans la page : on attend qu'il le soit avant de surveiller son départ.
+    if (!seen) return;
+    obs.disconnect();
+    fn();
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
 }
 
 /** Ajoute une liste d'enfants à un élément (récursif : aplatit les tableaux imbriqués). */
@@ -311,6 +335,10 @@ export const isDesktop = () => window.matchMedia('(min-width: 900px)').matches;
 /** Texte lisible sur une couleur de fond. */
 // Entrée : couleur « #RRGGBB ». Sortie : bleu nuit (fond clair) ou blanc (fond foncé).
 export function inkFor(hex: string) {
+  // Formats acceptés : #RGB (court) et #RRGGBB. Le format court est d'abord « déplié » (#abc → #aabbcc).
+  // Toute autre valeur (nom de couleur, rgb()…) : encre blanche par défaut.
+  if (/^#[0-9a-f]{3}$/i.test(hex)) hex = `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return '#ffffff';
   // On enlève le « # » et on lit le reste comme un nombre en base 16 (hexadécimal).
   const n = parseInt(hex.slice(1), 16);
   // Extraction des 3 composantes (0 à 255) par décalage de bits : `>> 16` garde les 2 premiers chiffres

@@ -148,9 +148,17 @@ export async function deviceKeys(): Promise<DeviceKeys> {
   // la même chaîne, ce qui permet de comparer des clés par simple égalité de texte (serveur et client).
   const publicJwk = JSON.stringify({ kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y });
   const keys = { privateKey: pair.privateKey, publicJwk };
-  // Rangement dans IndexedDB (l'objet CryptoKey est stocké tel quel, toujours non extractible).
-  await idb('readwrite', (s) => s.put(keys, 'device'));
-  return keys;
+  // add (et non put) : échoue si un AUTRE onglet a créé sa clé entre-temps. Dans ce cas on garde
+  // la sienne (relue juste après), au lieu de l'écraser : sinon l'autre onglet aurait publié une
+  // clé qui n'existe plus, et ses messages seraient devenus illisibles.
+  try {
+    await idb('readwrite', (s) => s.add(keys, 'device'));
+    return keys;
+  } catch {
+    const again = await idb<DeviceKeys | undefined>('readonly', (s) => s.get('device'));
+    if (again?.privateKey && again.publicJwk) return again;
+    throw new Error('Impossible d\'enregistrer la clé de chiffrement sur cet appareil.');
+  }
 }
 
 /*
@@ -224,10 +232,11 @@ export async function newEpoch(me: DeviceKeys, members: { id: string; publicKey:
  * Entrées : mes clés et l'enveloppe (qui l'a faite = senderKey, pour quelle clé = recipientKey, contenu, IV).
  * Sortie : la clé de groupe de cette époque, non extractible. Lève une erreur si l'enveloppe ne s'ouvre pas.
  */
-export async function openEpoch(me: DeviceKeys, w: { senderKey: string; recipientKey: string; wrapped: string; iv: string }): Promise<CryptoKey> {
-  // Si l'appareil a changé de clé (données du site effacées), les vieilles enveloppes visaient l'ancienne
-  // clé : inutile d'essayer, elles sont perdues pour lui.
+export async function openEpoch(me: DeviceKeys, w: { senderKey: string; recipientKey: string; wrapped: string; iv: string }, trustedKeys: Set<string>): Promise<CryptoKey> {
   if (w.recipientKey !== me.publicJwk) throw new Error('Enveloppe faite pour une ancienne clé de cet appareil');
+  // L'enveloppe doit venir de la clé d'un membre CONNU. Sans ce contrôle, un serveur malveillant
+  // pouvait fabriquer lui-même une époque (avec sa propre clé) et nous faire chiffrer pour lui.
+  if (!trustedKeys.has(w.senderKey)) throw new Error('Enveloppe d\'un expéditeur inconnu');
   // Je recalcule la même clé d'enveloppe que l'expéditeur : ECDH(ma privée, sa publique) + même sel.
   const k = await pairKey(me.privateKey, w.senderKey, await saltFor(w.senderKey, me.publicJwk));
   // Déchiffrement : AES-GCM vérifie au passage que l'enveloppe n'a pas été modifiée (sinon : erreur).
@@ -244,6 +253,13 @@ export async function openEpoch(me: DeviceKeys, w: { senderKey: string; recipien
  * Le type est DANS la partie chiffrée : le serveur ne sait même pas si c'est un texte ou une position.
  */
 export type Plain = { t: 'text'; body: string } | { t: 'loc'; lat: number; lng: number; acc?: number };
+/**
+ * Ce qui est réellement chiffré : le message, plus un identifiant aléatoire (mid) et l'heure
+ * d'envoi (at). Ces deux champs sont protégés par le chiffrement authentifié : le serveur ne peut
+ * ni les lire ni les modifier. Il pouvait avant renvoyer un message en double (rejeu) ou changer
+ * son heure ; désormais le client repère les doublons par mid et affiche l'heure chiffrée.
+ */
+export type Sealed = Plain & { mid?: string; at?: number };
 
 /*
  * Données associées (AAD) d'un message : préfixe de version + numéro d'époque + identifiant de l'expéditeur.
@@ -257,11 +273,9 @@ const aad = (epochId: number, senderId: string) => new TextEncoder().encode(`ter
  * Sortie : { iv, ciphertext } en base64url, à envoyer au serveur avec l'epochId.
  */
 export async function encryptMessage(key: CryptoKey, epochId: number, senderId: string, msg: Plain) {
-  // IV neuf et aléatoire pour chaque message : la même clé de groupe sert à beaucoup de messages,
-  // donc réutiliser un IV serait une faute grave (voir le guide en haut du fichier).
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  // Le message devient du JSON, puis des octets UTF-8.
-  const data = new TextEncoder().encode(JSON.stringify(msg));
+  const sealed: Sealed = { ...msg, mid: b64(crypto.getRandomValues(new Uint8Array(12))), at: Date.now() };
+  const data = new TextEncoder().encode(JSON.stringify(sealed));
   // Chiffrement authentifié : le résultat contient le texte chiffré + l'étiquette d'intégrité de 16 octets.
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad(epochId, senderId) }, key, data);
   return { iv: b64(iv), ciphertext: b64(ct) };
@@ -271,14 +285,20 @@ export async function encryptMessage(key: CryptoKey, epochId: number, senderId: 
  * Déchiffrer un message reçu. Lève une erreur si : mauvaise clé, message modifié, mauvaise époque ou mauvais
  * expéditeur (AAD différente), ou contenu inattendu. chat.ts attrape l'erreur et affiche « illisible ».
  */
-export async function decryptMessage(key: CryptoKey, epochId: number, senderId: string, iv: string, ciphertext: string): Promise<Plain> {
-  // L'AAD est recalculée à partir de ce que dit le serveur (époque, expéditeur) : s'il ment, l'étiquette ne colle plus.
+export async function decryptMessage(key: CryptoKey, epochId: number, senderId: string, iv: string, ciphertext: string): Promise<Sealed> {
   const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv), additionalData: aad(epochId, senderId) }, key, unb64(ciphertext));
-  const msg = JSON.parse(new TextDecoder().decode(pt)) as Plain;
-  // Le « as Plain » ne vérifie rien à l'exécution : on contrôle donc la forme à la main, et on reconstruit
-  // un objet propre (sans champ en trop) pour ne jamais faire confiance aveuglément à un autre membre.
-  if (msg.t === 'text' && typeof msg.body === 'string') return { t: 'text', body: msg.body };
-  if (msg.t === 'loc' && Number.isFinite(msg.lat) && Number.isFinite(msg.lng)) return { t: 'loc', lat: msg.lat, lng: msg.lng, acc: msg.acc };
+  const msg = JSON.parse(new TextDecoder().decode(pt)) as Sealed;
+  // Identifiant et heure chiffrés (absents des messages d'avant cette version : on les tolère).
+  const extra = {
+    mid: typeof msg.mid === 'string' && msg.mid.length <= 40 ? msg.mid : undefined,
+    at: Number.isFinite(msg.at) ? msg.at : undefined,
+  };
+  // Chaque champ est vérifié : un message bricolé par un membre ne doit pas casser l'affichage.
+  if (msg.t === 'text' && typeof msg.body === 'string') return { t: 'text', body: msg.body.slice(0, 4000), ...extra };
+  if (msg.t === 'loc' && Number.isFinite(msg.lat) && Math.abs(msg.lat) <= 90 && Number.isFinite(msg.lng) && Math.abs(msg.lng) <= 180) {
+    const acc = Number.isFinite(msg.acc) && msg.acc! >= 0 && msg.acc! < 100_000 ? msg.acc : undefined;
+    return { t: 'loc', lat: msg.lat, lng: msg.lng, acc, ...extra };
+  }
   throw new Error('Message illisible');
 }
 
@@ -293,10 +313,10 @@ export async function decryptMessage(key: CryptoKey, epochId: number, senderId: 
 export async function safetyCode(publicJwk: string): Promise<string> {
   // Empreinte de 32 octets de la clé publique (son texte JWK canonique).
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(publicJwk)));
+  // 10 paires de chiffres, chacune tirée de 3 octets (24 bits) modulo 100 : le biais vers les petits
+  // nombres devient négligeable (avant : 16 bits, biais faible mais réel). 10 × 3 = 30 octets ≤ 32.
   let n = '';
-  // Pour i = 0..9 : on assemble 2 octets en un nombre de 0 à 65535, on garde le reste modulo 100,
-  // et on l'écrit sur 2 chiffres (padStart ajoute un 0 devant si besoin).
-  for (let i = 0; i < 10; i++) n += String(((h[2 * i] << 8) | h[2 * i + 1]) % 100).padStart(2, '0');
+  for (let i = 0; i < 10; i++) n += String(((h[3 * i] << 16) | (h[3 * i + 1] << 8) | h[3 * i + 2]) % 100).padStart(2, '0');
   // Découpe en blocs de 5 chiffres séparés par un espace, plus faciles à lire à voix haute.
   return n.match(/.{1,5}/g)!.join(' ');
 }

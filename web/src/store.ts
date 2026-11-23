@@ -27,6 +27,15 @@ export type Group = 'fixe' | 'event' | 'flash' | 'alert';
 // Un abonné : une fonction sans paramètre et sans valeur de retour.
 type Listener = () => void;
 
+/**
+ * Noms des événements du store. Une liste fermée : une faute de frappe dans store.on('pionts', …)
+ * est maintenant une erreur de compilation au lieu d'un abonnement qui ne se déclenche jamais.
+ *  - points : la liste des points a changé ; open-votes : les votes ouverts ont changé ;
+ *  - view : on a changé d'onglet ; filters : un filtre de carte a changé ; route : le trajet a changé ;
+ *  - votes / archive / chat : un signal temps réel du serveur pour ces modules.
+ */
+export type StoreEvent = 'points' | 'open-votes' | 'view' | 'filters' | 'route' | 'votes' | 'archive' | 'chat';
+
 // Clé sous laquelle on mémorise, dans le navigateur (localStorage), le dernier espace utilisé.
 const SPACE_KEY = 'terrain:space';
 
@@ -62,13 +71,13 @@ class Store {
 
   // Les abonnés, rangés par nom d'événement : 'points' → {fonction1, fonction2…}.
   // `private` : seul le code de la classe y a accès.
-  private listeners = new Map<string, Set<Listener>>();
+  private listeners = new Map<StoreEvent, Set<Listener>>();
 
   /**
    * S'abonner à un événement. Renvoie une fonction de désabonnement : on l'appelle quand l'écran
    * est fermé, pour ne pas garder un abonné « fantôme » (voir votes.ts : `const off = store.on(...)`).
    */
-  on(evt: string, fn: Listener) {
+  on(evt: StoreEvent, fn: Listener) {
     // Première fois qu'on entend parler de cet événement : on crée son ensemble d'abonnés.
     if (!this.listeners.has(evt)) this.listeners.set(evt, new Set());
     // `!` : on sait que l'entrée existe (créée juste au-dessus).
@@ -76,7 +85,7 @@ class Store {
     return () => this.listeners.get(evt)!.delete(fn);
   }
   /** Prévenir tous les abonnés d'un événement. `?.` : s'il n'y a aucun abonné, on ne fait rien. */
-  emit(evt: string) {
+  emit(evt: StoreEvent) {
     this.listeners.get(evt)?.forEach((fn) => fn());
   }
 
@@ -120,12 +129,32 @@ class Store {
   }
 
   /** Recharge tous les points depuis le serveur et nettoie la sélection du trajet. */
-  async refresh() {
-    // Déstructuration : on récupère directement le champ `points` de la réponse { points: [...] }.
-    const { points } = await api.points();
+  /** Index id → point, reconstruit à chaque changement de la liste (recherche instantanée). */
+  private byId = new Map<string, Point>();
+  private reindex() {
+    this.byId = new Map(this.points.map((p) => [p.id, p]));
+  }
+
+  /** Rechargement en cours (pour ne pas en lancer un deuxième en même temps). */
+  private inflight: Promise<void> | null = null;
+
+  /**
+   * Recharge les points depuis le serveur. Si un rechargement est déjà en cours (ex. une rafale
+   * de messages temps réel + une notification qui en demande un), on renvoie le même au lieu d'en
+   * lancer un second en parallèle.
+   */
+  refresh(): Promise<void> {
+    if (!this.inflight) this.inflight = this.doRefresh().finally(() => { this.inflight = null; });
+    return this.inflight;
+  }
+
+  private async doRefresh() {
+    // Le serveur ne renvoie que les points de l'espace demandé.
+    const { points } = await api.points(this.space);
     this.points = points.filter((p) => p.space === this.space);
-    // Ensemble des ids encore existants, pour retirer du trajet les points supprimés entre-temps.
-    const ids = new Set(points.map((p) => p.id));
+    this.reindex();
+    // Ids des points de l'espace COURANT : un point de l'autre espace ne doit pas rester dans le trajet.
+    const ids = new Set(this.points.map((p) => p.id));
     for (const id of this.routeSelection) if (!ids.has(id)) this.routeSelection.delete(id);
     this.routeOrder = this.routeOrder.filter((id) => ids.has(id));
     this.emit('points');
@@ -139,12 +168,14 @@ class Store {
     const i = this.points.findIndex((x) => x.id === p.id);
     if (i >= 0) this.points[i] = p;
     else this.points.push(p);
+    this.reindex();
     this.emit('points');
   }
 
   /** Retire un point de la mémoire (et du trajet). */
   remove(id: string) {
     this.points = this.points.filter((p) => p.id !== id);
+    this.reindex();
     this.routeSelection.delete(id);
     this.routeOrder = this.routeOrder.filter((x) => x !== id);
     this.emit('points');
@@ -152,7 +183,7 @@ class Store {
 
   /** Trouve un point par son id (undefined s'il n'est pas chargé). */
   get(id: string) {
-    return this.points.find((p) => p.id === id);
+    return this.byId.get(id);
   }
 
   /** Change d'écran et prévient les abonnés à 'view'. */
@@ -180,7 +211,8 @@ export const spaceColor = () => (store.space === 'mvt' ? '#a30006' : '#7B13D6');
 export function paintOf(p: Point): { color: string; ink: string } {
   // `src` = le point dont on prend la couleur : le blocus parent pour un blocage rattaché
   // (s'il est bien chargé, sinon `?? p` revient au point lui-même), le point dans tous les autres cas.
-  const src = p.type === 'blocage' && p.parentId ? store.points.find((x) => x.id === p.parentId) ?? p : p;
+  // store.get : recherche dans l'index (avant, un parcours de toute la liste pour chaque blocage).
+  const src = p.type === 'blocage' && p.parentId ? store.get(p.parentId) ?? p : p;
   const color = colorOf(src);
   // Couleur choisie à la main → on calcule si le texte doit être clair ou foncé (inkFor) ;
   // couleur du type → on prend l'encre prévue dans TYPES.

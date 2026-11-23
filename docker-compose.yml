@@ -1,11 +1,16 @@
 # Terrain — déploiement Docker.
 #
+# Avant tout : copier .env.example en .env et y mettre le domaine (DOMAIN=...).
+# Aucun domaine n'est écrit en dur ici : sans DOMAIN, docker compose refuse de démarrer.
+#
 # Cas 1 : le serveur a déjà un reverse proxy HTTPS (Nginx, Traefik, Nginx Proxy Manager…)
 #   docker compose up -d
 #   → l'app écoute sur 127.0.0.1:3180, à relier au proxy (voir DOCKER.md).
 #
 # Cas 2 : rien n'occupe les ports 80/443 → Caddy fournit le HTTPS automatiquement :
-#   DOMAIN=carte.raphaelgosset.fr docker compose --profile caddy up -d
+#   docker compose --profile caddy up -d
+#
+# Dans les deux cas, le service « backup » fait une sauvegarde chaque nuit (voir plus bas).
 
 # Liste des conteneurs (« services ») à lancer ensemble.
 services:
@@ -19,11 +24,33 @@ services:
     # Redémarre après un plantage ou un redémarrage de la machine, sauf si on l'a arrêté à la main.
     restart: unless-stopped
     init: true   # arrêt propre (signaux transmis à Node)
+    # Durcissement :
+    # - read_only : le système de fichiers du conteneur (code compris) est en lecture seule ;
+    #   l'app n'écrit que dans le volume /data, et dans /tmp (cache de tsx), un petit disque
+    #   en mémoire (tmpfs) vidé à chaque redémarrage ;
+    # - no-new-privileges : impossible d'obtenir plus de droits (setuid, sudo...) ;
+    # - cap_drop ALL : aucune « capacité » Linux (morceaux des pouvoirs de root), inutiles ici ;
+    # - limites : 512 Mo de mémoire et 1 processeur au plus (l'app en utilise bien moins) ;
+    #   pids_limit empêche qu'un bug ne crée des processus à l'infini.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 200
     # Variables d'environnement passées à l'app.
     environment:
       # Adresse publique, utilisée dans les liens d'invitation.
-      # Syntaxe DOMAIN:-valeur entre accolades : la variable DOMAIN si elle existe, sinon la valeur indiquée.
-      PUBLIC_URL: https://${DOMAIN:-carte.raphaelgosset.fr}
+      # Syntaxe DOMAIN:?message entre accolades : la variable DOMAIN, et une erreur claire si elle manque.
+      PUBLIC_URL: https://${DOMAIN:?Indique le domaine dans le fichier .env (DOMAIN=carte.exemple.fr)}
+      # Fuseau horaire (déjà fixé dans le Dockerfile ; modifiable ici via TZ dans .env).
+      TZ: ${TZ:-Europe/Paris}
+      # Cache de npm dans /tmp (le reste est en lecture seule) : utile pour
+      # « docker compose exec terrain npm run invite-admin ».
+      npm_config_cache: /tmp/.npm
     # Volume nommé terrain-data monté sur /data : base SQLite et photos survivent aux reconstructions.
     volumes:
       - terrain-data:/data
@@ -35,16 +62,22 @@ services:
 
   # Caddy : serveur web qui obtient et renouvelle tout seul le certificat HTTPS (Let's Encrypt).
   caddy:
-    # Image officielle de Caddy, version 2.
-    image: caddy:2
+    # Image officielle de Caddy, version épinglée (2.11) : pas de saut de version surprise.
+    # Les correctifs 2.11.x arrivent avec « docker compose pull ».
+    image: caddy:2.11
     # Profil : ce service ne démarre que si l'on ajoute --profile caddy à la commande.
     profiles: ["caddy"]
     restart: unless-stopped
     # Démarré après le conteneur terrain (sans attendre qu'il soit « en bonne santé »).
     depends_on: [terrain]
+    # Durcissement léger : pas d'élévation de droits, mémoire limitée. (Pas de cap_drop ALL :
+    # Caddy a besoin de sa capacité d'ouvrir les ports 80/443.)
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
     # Domaine lu par deploy/Caddyfile.docker.
     environment:
-      DOMAIN: ${DOMAIN:-carte.raphaelgosset.fr}
+      DOMAIN: ${DOMAIN:?Indique le domaine dans le fichier .env (DOMAIN=carte.exemple.fr)}
     # Ports publics : 80 (HTTP, pour obtenir le certificat puis rediriger vers HTTPS),
     # 443 TCP (HTTPS) et 443 UDP (HTTP/3).
     ports:
@@ -58,8 +91,44 @@ services:
       - caddy-data:/data
       - caddy-config:/config
 
+  # Sauvegardes automatiques : même image que l'app, mais lance backup.ts en continu.
+  # Une sauvegarde au démarrage, puis chaque nuit à BACKUP_HOUR (4 h par défaut), gardées
+  # BACKUP_DAYS jours (14 par défaut), dans le volume terrain-backups.
+  # Le volume est sur le même disque : pense à copier régulièrement ces sauvegardes AILLEURS
+  # (voir DOCKER.md, section Sauvegardes).
+  backup:
+    image: terrain:latest
+    container_name: terrain-backup
+    restart: unless-stopped
+    init: true
+    depends_on: [terrain]
+    # Même durcissement que l'app (voir plus haut), avec des limites plus basses, et AUCUN
+    # réseau (network_mode: none) : une sauvegarde n'a besoin de joindre personne.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 100
+    network_mode: none
+    environment:
+      DATA_DIR: /data
+      TZ: ${TZ:-Europe/Paris}
+      BACKUP_HOUR: ${BACKUP_HOUR:-4}
+    volumes:
+      - terrain-data:/data
+      - terrain-backups:/backups
+    command: ["node", "--disable-warning=ExperimentalWarning", "--import", "tsx", "server/backup.ts", "/backups", "${BACKUP_DAYS:-14}", "--daemon"]
+    # Pas de bilan de santé HTTP pour ce conteneur (il n'écoute sur aucun port).
+    healthcheck:
+      disable: true
+
 # Déclaration des volumes nommés : Docker les stocke lui-même (dans /var/lib/docker/volumes).
 volumes:
   terrain-data:
+  terrain-backups:
   caddy-data:
   caddy-config:

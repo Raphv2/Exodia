@@ -52,6 +52,9 @@ export function stream(req: Request, res: Response) {
   res.write('retry: 5000\n\n');
   // On enregistre cette connexion. `req.device!` : le `!` (« non-null assertion ») dit à TypeScript
   // « je sais que device existe » — vrai car requireDevice est placé avant cette route.
+  // Au plus 5 connexions par appareil (plusieurs onglets) : au-delà, on ferme la plus ancienne.
+  const mine = [...clients].filter(([, id]) => id === req.device!.id).map(([r]) => r);
+  if (mine.length >= 5) { mine[0].end(); clients.delete(mine[0]); }
   clients.set(res, req.device!.id);
   // Quand le navigateur ferme la connexion (onglet fermé, réseau perdu), on l'oublie.
   req.on('close', () => clients.delete(res));
@@ -69,21 +72,19 @@ const spacesOfDevice = db.prepare('SELECT spaces FROM devices WHERE id = ? AND r
 // `{}` par défaut), `space` = facultatif ('lfi' ou 'mvt'). Sans `space`, tout le monde reçoit.
 // `Record<string, unknown>` = « un objet dont les clés sont des textes et les valeurs de n'importe
 // quel type » ; `unknown` est plus sûr que `any` car il oblige à vérifier avant d'utiliser.
-export function broadcast(event: string, data: Record<string, unknown> = {}, space?: string) {
-  // Le message est fabriqué une seule fois. Si un espace est donné, on l'ajoute dans les données
-  // (`{ ...data, space }` = copie de data + champ space) pour que le client sache d'où il vient.
-  const payload = `event: ${event}\ndata: ${JSON.stringify(space ? { ...data, space } : data)}\n\n`;
-  // Parcours de la Map : chaque entrée est un couple [clé, valeur], déstructuré en [res, deviceId].
+// `space` est désormais OBLIGATOIRE : l'oublier aurait envoyé l'information aux deux espaces.
+export function broadcast(event: string, data: Record<string, unknown>, space: string) {
+  // Le message est fabriqué une seule fois, avec l'espace (le client sait d'où il vient).
+  const payload = `event: ${event}\ndata: ${JSON.stringify({ ...data, space })}\n\n`;
+  // Une seule lecture en base par APPAREIL et par diffusion (et non une par connexion ouverte).
+  const allowed = new Map<string, boolean>();
   for (const [res, deviceId] of clients) {
-    if (space) {
-      // Une requête SQL par client connecté et par diffusion : simple et toujours à jour.
+    if (!allowed.has(deviceId)) {
       const row = spacesOfDevice.get(deviceId) as { spaces: string } | undefined;
-      // Appareil révoqué (row absent) ou sans accès à cet espace : on saute (`continue`).
-      // `space as never` : astuce de typage pour que `includes` (qui attend un Space) accepte une
-      // simple string ; ça n'a aucun effet à l'exécution.
-      if (!row || !parseSpaces(row.spaces).includes(space as never)) continue;
+      // Appareil révoqué (row absent) ou sans accès à cet espace : pas de message.
+      allowed.set(deviceId, !!row && parseSpaces(row.spaces).includes(space as never));
     }
-    res.write(payload);
+    if (allowed.get(deviceId)) res.write(payload);
   }
 }
 

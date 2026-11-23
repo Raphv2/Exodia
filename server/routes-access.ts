@@ -40,9 +40,9 @@ import { Router, type Request } from 'express';
 // Bibliothèque qui génère des QR codes (ici en image SVG, c'est-à-dire du texte).
 import QRCode from 'qrcode';
 import { z } from 'zod';
-import { db } from './db';
+import { db, tx } from './db';
 import {
-  createInvite, deviceToDto, inviteToDto, newId, newToken, rateLimit, requireDevice, requireRole,
+  asyncRoute, createInvite, deviceToDto, inviteToDto, newId, newToken, rateLimit, requireDevice, requireRole,
   setSessionCookie, clearSessionCookie, sha256, parseSpaces, joinSpaces, spacesOf, coversSpaces,
   type DeviceRow, type InviteRow,
 } from './auth';
@@ -90,29 +90,30 @@ access.post('/auth/claim', rateLimit(10, 60_000), (req, res) => {
   if (!body.success) return res.status(400).json({ error: body.error.issues[0]?.message ?? 'Données invalides' });
 
   const now = Date.now();
-  // On cherche l'invitation par l'empreinte du jeton (la base ne contient que des empreintes).
-  const invite = db.prepare('SELECT * FROM invites WHERE token_hash = ?').get(sha256(body.data.token)) as InviteRow | undefined;
-  // Trois raisons de refuser, toutes en 410 « n'existe plus » avec un message explicite :
-  // inexistante ou annulée…
-  if (!invite || invite.revoked_at) return res.status(410).json({ error: 'Cette invitation n\'existe pas ou a été annulée.' });
-  // … expirée…
-  if (invite.expires_at < now) return res.status(410).json({ error: 'Cette invitation a expiré. Demande un nouveau QR code.' });
-  // … ou déjà utilisée autant de fois que permis.
-  if (invite.uses >= invite.max_uses) return res.status(410).json({ error: 'Cette invitation a déjà été utilisée.' });
-
   // Nouveau jeton de session (secret, mis dans le cookie) et nouvel id d'appareil.
   const token = newToken();
   const id = newId();
-  // Transaction : les deux écritures ci-dessous (compteur d'utilisations + nouvel appareil) doivent
-  // réussir ENSEMBLE ou pas du tout. BEGIN ouvre la transaction, COMMIT la valide, ROLLBACK l'annule.
-  db.exec('BEGIN');
-  try {
+  // Transaction (tx, voir db.ts) : vérifications ET écritures se font d'un bloc. Ainsi, même si un
+  // jour le serveur devenait asynchrone ou multi-processus, une invitation à usage unique ne
+  // pourrait pas être utilisée deux fois « en même temps ».
+  const refused = tx(() => {
+    // On cherche l'invitation par l'empreinte du jeton (la base ne contient que des empreintes).
+    const invite = db.prepare('SELECT * FROM invites WHERE token_hash = ?').get(sha256(body.data.token)) as InviteRow | undefined;
+    // Trois raisons de refuser, toutes en 410 « n'existe plus » avec un message explicite :
+    if (!invite || invite.revoked_at) return 'Cette invitation n\'existe pas ou a été annulée.';
+    if (invite.expires_at < now) return 'Cette invitation a expiré. Demande un nouveau QR code.';
+    if (invite.uses >= invite.max_uses) return 'Cette invitation a déjà été utilisée.';
     // `uses = uses + 1` est calculé par SQLite lui-même (pas de lecture puis écriture côté JS).
     db.prepare('UPDATE invites SET uses = uses + 1 WHERE id = ?').run(invite.id);
     // L'invitation fixe les espaces ; celle du tout premier lancement fait de l'appareil le propriétaire.
     // Condition « propriétaire » : étiquette 'bootstrap' ET aucun créateur (invitation produite par
-    // le serveur lui-même : ensureBootstrapAdmin ou cli-invite.ts, jamais par un utilisateur).
+    // le serveur lui-même : ensureBootstrapAdmin ou cli-invite.ts). Un utilisateur ne peut pas en
+    // fabriquer une : ses invitations ont toujours un créateur (created_by).
     const owner = invite.label === 'bootstrap' && !invite.created_by ? 1 : 0;
+    // Il n'y a qu'UN propriétaire. Une invitation de secours (npm run invite-admin, typiquement après
+    // la perte du téléphone) TRANSFÈRE la propriété : l'ancien propriétaire devient simple admin
+    // (le nouveau peut ensuite le retirer s'il a été perdu ou volé).
+    if (owner) db.prepare('UPDATE devices SET owner = 0 WHERE owner = 1').run();
     // Insertion du nouvel appareil : 11 colonnes, 11 `?`, valeurs passées dans le même ordre.
     db.prepare(`INSERT INTO devices (id, name, role, token_hash, invited_by, invite_id, created_at, last_seen, user_agent, spaces, owner)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -121,13 +122,9 @@ access.post('/auth/claim', rateLimit(10, 60_000), (req, res) => {
       // Espaces : les deux pour le propriétaire, sinon ceux prévus par l'invitation (déjà en texte).
       .run(id, body.data.name, invite.role, sha256(token), invite.created_by, invite.id, now, now, (req.get('user-agent') ?? '').slice(0, 200),
         owner ? joinSpaces([...SPACES]) : invite.spaces, owner);
-    db.exec('COMMIT');
-  } catch (e) {
-    // En cas d'erreur, on annule tout, puis on relance l'erreur : le gestionnaire d'erreurs
-    // d'index.ts répondra 500.
-    db.exec('ROLLBACK');
-    throw e;
-  }
+    return null;
+  });
+  if (refused) return res.status(410).json({ error: refused });
   // Le navigateur garde désormais le jeton dans un cookie httpOnly.
   setSessionCookie(req, res, token);
   // On relit la ligne insérée pour renvoyer exactement ce qui est en base.
@@ -156,8 +153,19 @@ access.patch('/me', requireDevice, (req, res) => {
 
 // POST /api/auth/logout — Déconnexion. Ce n'est pas un simple oubli du cookie : l'appareil est
 // RÉVOQUÉ en base. Pour revenir, il faudra une nouvelle invitation.
+// Garde-fous : le propriétaire ne peut pas se déconnecter (l'app n'aurait plus de propriétaire),
+// ni le dernier admin. Les invitations encore ouvertes créées par cet appareil sont annulées et son
+// flux temps réel est coupé, exactement comme pour un retrait par un admin.
 access.post('/auth/logout', requireDevice, (req, res) => {
-  db.prepare('UPDATE devices SET revoked_at = ? WHERE id = ?').run(Date.now(), req.device!.id);
+  const me = req.device!;
+  if (me.owner) return res.status(400).json({ error: 'Le propriétaire ne peut pas se déconnecter. Pour changer de téléphone, utilise une invitation de secours (npm run invite-admin) depuis le serveur.' });
+  if (me.role === 'admin' && activeAdminCount() <= 1) return res.status(400).json({ error: 'Tu es le dernier admin : nomme d\'abord un autre admin.' });
+  const now = Date.now();
+  tx(() => {
+    db.prepare('UPDATE devices SET revoked_at = ? WHERE id = ?').run(now, me.id);
+    db.prepare('UPDATE invites SET revoked_at = ? WHERE revoked_at IS NULL AND created_by = ?').run(now, me.id);
+  });
+  disconnect([me.id]);
   clearSessionCookie(res);
   res.json({ ok: true });
 });
@@ -202,7 +210,7 @@ function canManage(me: DeviceRow, target: DeviceRow): boolean {
  * Sortie : { invite, url, qrSvg } — le lien complet et son QR code en SVG, prêts à afficher.
  * Réservée aux admins et relais. `async` car la génération du QR code est asynchrone (`await`).
  */
-access.post('/invites', requireDevice, requireRole('admin', 'relais'), async (req, res) => {
+access.post('/invites', requireDevice, requireRole('admin', 'relais'), asyncRoute(async (req, res) => {
   const parsed = inviteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Paramètres d\'invitation invalides' });
   // Destructuration avec `let` (et non `const`) : ces trois valeurs pourront être modifiées plus bas
@@ -234,7 +242,7 @@ access.post('/invites', requireDevice, requireRole('admin', 'relais'), async (re
   // la forme diverge de ce que le client attend, TypeScript le signale à la compilation.
   const out: CreatedInvite = { invite: inviteToDto(row), url, qrSvg };
   res.json(out);
-});
+}));
 
 /**
  * GET /api/invites — Invitations encore utilisables (admins seulement).
@@ -321,14 +329,19 @@ access.patch('/devices/:id', requireDevice, requireRole('admin'), (req, res) => 
   // … et on ne peut accorder que des espaces qu'on possède soi-même.
   if (body.data.spaces && !coversSpaces(me, body.data.spaces as Space[])) return res.status(403).json({ error: 'Tu ne peux donner que tes propres espaces.' });
   // Mises à jour, une par champ fourni (sans transaction : voir la remarque sur l'ordre ci-dessous).
-  if (body.data.spaces) db.prepare('UPDATE devices SET spaces = ? WHERE id = ?').run(joinSpaces(body.data.spaces as Space[]), target.id);
+  // (Avant, les espaces étaient enregistrés ICI, avant le contrôle « dernier admin » ci-dessous :
+  // une réponse 400 laissait la modification à moitié faite. Désormais : tous les contrôles, puis
+  // toutes les écritures ensemble.)
   // Garde-fou : on refuse de rétrograder le dernier admin actif. (Les espaces, eux, ont déjà été
   // enregistrés à la ligne précédente même si on refuse ici.)
   if (body.data.role && target.role === 'admin' && body.data.role !== 'admin' && activeAdminCount() <= 1) {
     return res.status(400).json({ error: 'Il doit rester au moins un admin.' });
   }
-  if (body.data.role) db.prepare('UPDATE devices SET role = ? WHERE id = ?').run(body.data.role, target.id);
-  if (body.data.name) db.prepare('UPDATE devices SET name = ? WHERE id = ?').run(body.data.name, target.id);
+  tx(() => {
+    if (body.data.spaces) db.prepare('UPDATE devices SET spaces = ? WHERE id = ?').run(joinSpaces(body.data.spaces as Space[]), target.id);
+    if (body.data.role) db.prepare('UPDATE devices SET role = ? WHERE id = ?').run(body.data.role, target.id);
+    if (body.data.name) db.prepare('UPDATE devices SET name = ? WHERE id = ?').run(body.data.name, target.id);
+  });
   res.json({ ok: true });
 });
 
@@ -359,13 +372,22 @@ access.delete('/devices/:id', requireDevice, requireRole('admin'), (req, res) =>
   const tree = cascade
     ? (db.prepare(`
         WITH RECURSIVE tree(id) AS (
-          SELECT ? UNION SELECT d.id FROM devices d JOIN tree t ON d.invited_by = t.id WHERE d.revoked_at IS NULL
+          SELECT ? UNION SELECT d.id FROM devices d JOIN tree t ON d.invited_by = t.id
         ) SELECT d.* FROM devices d JOIN tree t ON t.id = d.id`).all(target.id) as unknown as DeviceRow[])
     : [target];
-  // On ne garde que les appareils que j'ai le droit de gérer (la cible a déjà été vérifiée plus haut).
-  // Remarque : un descendant non gérable est sauté, mais ses propres « filleuls » restent dans la
-  // liste et sont révoqués s'ils sont gérables (le parcours SQL ne s'arrête pas sur lui).
-  const ids = tree.filter((d) => d.id === target.id || canManage(me, d)).map((d) => d.id);
+  // Parcours de l'arbre depuis la cible, en descendant d'invité en invité :
+  //  - un intermédiaire DÉJÀ révoqué ne bloque plus la descente (avant, ses invités étaient oubliés) ;
+  //  - un appareil que je n'ai PAS le droit de gérer est épargné, et toute sa descendance avec lui
+  //    (avant, ses propres invités pouvaient être retirés alors que lui restait).
+  const byParent = new Map<string, DeviceRow[]>();
+  for (const d of tree) if (d.invited_by) byParent.set(d.invited_by, [...(byParent.get(d.invited_by) ?? []), d]);
+  const ids: string[] = [];
+  const walk = (d: DeviceRow) => {
+    if (d.id !== target.id && !canManage(me, d)) return;
+    if (!d.revoked_at) ids.push(d.id);
+    for (const child of byParent.get(d.id) ?? []) walk(child);
+  };
+  walk(target);
 
   // Combien d'admins actifs vont disparaître ? `IN (?,?,?)` : on fabrique autant de `?` que d'ids
   // (`ids.map(() => '?').join(',')`), puis on passe les ids un par un avec `...ids` (« spread »).
@@ -377,11 +399,10 @@ access.delete('/devices/:id', requireDevice, requireRole('admin'), (req, res) =>
   }
   const now = Date.now();
   const placeholders = ids.map(() => '?').join(',');
-  // Révocation des appareils (marquage, pas de suppression : on garde l'historique).
-  db.prepare(`UPDATE devices SET revoked_at = ? WHERE id IN (${placeholders})`).run(now, ...ids);
-  // Annulation des invitations encore ouvertes créées par ces appareils (sinon elles resteraient
-  // utilisables après le départ de leur auteur).
-  db.prepare(`UPDATE invites SET revoked_at = ? WHERE revoked_at IS NULL AND created_by IN (${placeholders})`).run(now, ...ids);
+  tx(() => {
+    db.prepare(`UPDATE devices SET revoked_at = ? WHERE id IN (${placeholders})`).run(now, ...ids);
+    db.prepare(`UPDATE invites SET revoked_at = ? WHERE revoked_at IS NULL AND created_by IN (${placeholders})`).run(now, ...ids);
+  });
   // Coupe tout de suite leurs connexions temps réel (events.ts).
   disconnect(ids);
   res.json({ ok: true, revoked: ids.length });

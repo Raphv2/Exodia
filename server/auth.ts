@@ -113,7 +113,7 @@ export const newId = () => crypto.randomBytes(12).toString('base64url');
  * (format : « nom1=valeur1; nom2=valeur2 »). Évite d'ajouter la dépendance cookie-parser.
  * Renvoie la valeur décodée, ou null si le cookie est absent.
  */
-function readCookie(req: Request, name: string): string | null {
+export function readCookie(req: Request, name: string): string | null {
   const header = req.headers.cookie;
   if (!header) return null;
   for (const part of header.split(';')) {
@@ -121,18 +121,22 @@ function readCookie(req: Request, name: string): string | null {
     // On recolle `v` avec '=' juste après, au cas où la valeur contiendrait elle-même un '='.
     const [k, ...v] = part.trim().split('=');
     // decodeURIComponent : Express encode la valeur du cookie (ex. %3D) ; on la remet en clair.
-    if (k === name) return decodeURIComponent(v.join('='));
+    // try/catch : un cookie mal formé (ex. « %E0 ») ferait planter decodeURIComponent → on l'ignore.
+    if (k === name) {
+      try { return decodeURIComponent(v.join('=')); } catch { return null; }
+    }
   }
   return null;
 }
 
 /**
  * La requête arrive-t-elle en HTTPS ? `req.secure` est vrai en HTTPS direct, ou derrière un
- * proxy si `trust proxy` est réglé. On regarde aussi l'en-tête X-Forwarded-Proto posé par le
- * reverse-proxy (Caddy, Nginx…) qui, lui, reçoit le HTTPS et parle en HTTP à l'app.
+ * proxy quand `trust proxy` est réglé (TRUST_PROXY=1, le cas en Docker et avec systemd) : Express
+ * lit alors lui-même l'en-tête X-Forwarded-Proto du proxy. On ne lit PAS cet en-tête à la main :
+ * sans proxy de confiance, n'importe quel client pourrait l'inventer.
  */
-function isHttps(req: Request) {
-  return req.secure || req.headers['x-forwarded-proto'] === 'https';
+export function isHttps(req: Request) {
+  return req.secure;
 }
 
 /**
@@ -166,6 +170,24 @@ export function clearSessionCookie(res: Response) {
 const findDevice = db.prepare('SELECT * FROM devices WHERE token_hash = ? AND revoked_at IS NULL');
 // touchDevice : met à jour la date de dernière activité.
 const touchDevice = db.prepare('UPDATE devices SET last_seen = ? WHERE id = ?');
+
+/**
+ * L'appareil connecté s'il y en a un, sinon undefined — sans jamais répondre d'erreur.
+ * Pour les routes publiques qui se comportent un peu différemment quand on a l'app
+ * (archive privée visible, vote déjà fait avec l'app…). Une seule implémentation pour tout le serveur.
+ */
+export function optionalDevice(req: Request): DeviceRow | undefined {
+  const token = readCookie(req, COOKIE);
+  return token ? (findDevice.get(sha256(token)) as DeviceRow | undefined) : undefined;
+}
+
+/**
+ * Enveloppe une route `async` pour Express 4. Express 4 ne rattrape PAS les erreurs d'une fonction
+ * async (une promesse rejetée) : la requête restait bloquée sans réponse. `.catch(next)` transmet
+ * l'erreur au gestionnaire d'erreurs d'index.ts, qui répond proprement.
+ */
+export const asyncRoute = (fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) =>
+  (req: Request, res: Response, next: NextFunction) => { fn(req, res, next).catch(next); };
 
 /** Exige un appareil enregistré et non révoqué. */
 // Middleware posé devant toutes les routes privées. En cas de succès, `req.device` contient la
@@ -218,26 +240,53 @@ export function csrf(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-/** Limiteur très simple, en mémoire, par IP. */
-// rateLimit(10, 60_000) = au plus 10 requêtes par minute et par adresse IP, sinon 429.
-// Principe de la « fenêtre glissante » : on garde, pour chaque IP, les dates des requêtes récentes.
-// Limites : la mémoire est perdue au redémarrage et n'est pas partagée entre plusieurs serveurs.
-export function rateLimit(max: number, windowMs: number) {
-  // `Map<string, number[]>` (générique) : clé = IP (texte), valeur = liste d'horodatages (nombres).
-  // Cette Map est créée UNE fois par limiteur et reste vivante grâce à la « fermeture » (closure) :
-  // la fonction renvoyée ci-dessous continue d'y avoir accès.
+/** Options d'un limiteur de requêtes. */
+export interface RateLimitOptions {
+  /** Ce qu'on compte : par défaut l'adresse IP. Ex. : un cookie de votant, pour compter par personne. */
+  key?: (req: Request) => string;
+  /**
+   * Ne compter que certaines réponses, d'après leur code HTTP. Ex. : `(s) => s === 404` pour ne
+   * compter que les codes de vote FAUX. Les bonnes réponses ne consomment alors rien : toute une
+   * salle d'AG derrière le même Wi-Fi peut entrer le bon code sans être bloquée.
+   */
+  countIf?: (status: number) => boolean;
+  /** Message renvoyé avec le 429. */
+  message?: string;
+}
+
+/**
+ * Limiteur de requêtes en mémoire. rateLimit(10, 60_000) = au plus 10 requêtes par minute et par
+ * adresse IP, sinon 429. Principe de la « fenêtre glissante » : on garde, pour chaque clé, les dates
+ * des requêtes récentes et on oublie celles sorties de la fenêtre.
+ * Limites : la mémoire est perdue au redémarrage et n'est pas partagée entre plusieurs serveurs
+ * (une seule instance ici : suffisant).
+ */
+export function rateLimit(max: number, windowMs: number, opts: RateLimitOptions = {}) {
+  // `Map<string, number[]>` : clé (IP ou autre) → liste d'horodatages. Créée UNE fois par limiteur
+  // et gardée vivante par la « fermeture » (closure) de la fonction renvoyée.
   const hits = new Map<string, number[]>();
-  return (req: Request, res: Response, next: NextFunction) => {
-    // `req.ip` peut être undefined (ex. socket déjà fermé) : on regroupe ces cas sous 'unknown'.
-    // Derrière un proxy, req.ip n'est la vraie IP du visiteur que si `trust proxy` est réglé (index.ts).
-    const key = req.ip ?? 'unknown';
+  // Ménage toutes les 5 minutes : on retire les clés dont tous les passages sont périmés.
+  // Sans ça, la Map grossissait indéfiniment (une entrée par adresse IP jamais revue).
+  // unref() : ce minuteur n'empêche pas Node de s'arrêter.
+  setInterval(() => {
     const now = Date.now();
-    // On ne garde que les passages encore dans la fenêtre de temps (les plus vieux sont oubliés).
+    for (const [k, list] of hits) if (!list.some((t) => now - t < windowMs)) hits.delete(k);
+  }, 5 * 60_000).unref();
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    // Derrière un proxy, req.ip n'est la vraie IP du visiteur que si `trust proxy` est réglé (index.ts).
+    const key = opts.key ? opts.key(req) : req.ip ?? 'unknown';
+    const now = Date.now();
     const list = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
-    list.push(now);
     hits.set(key, list);
-    // Note : même une requête refusée est comptée (elle a été ajoutée juste au-dessus).
-    if (list.length > max) return res.status(429).json({ error: 'Trop de tentatives, réessaie dans une minute' });
+    // Déjà au maximum : refus, sans même traiter la requête.
+    if (list.length >= max) return res.status(429).json({ error: opts.message ?? 'Trop de tentatives, réessaie dans une minute.' });
+    if (opts.countIf) {
+      // On ne compte qu'une fois la réponse envoyée, si son code correspond (événement 'finish').
+      res.on('finish', () => { if (opts.countIf!(res.statusCode)) list.push(Date.now()); });
+    } else {
+      list.push(now);
+    }
     next();
   };
 }

@@ -11,20 +11,22 @@ git clone https://github.com/Raphv2/lfiMap.git terrain
 cd terrain
 ```
 
+**D'abord, le fichier `.env`** (le domaine n'est écrit en dur nulle part, compose refuse de démarrer sans lui) :
+```bash
+cp .env.example .env
+nano .env        # DOMAIN=carte.raphaelgosset.fr (ou le domaine choisi)
+```
+Le fichier règle aussi le fuseau horaire (`TZ=Europe/Paris` par défaut) et l'heure des sauvegardes.
+
 **Cas A — tu as déjà un reverse proxy HTTPS** (Nginx, Traefik, Nginx Proxy Manager, Caddy…) :
 ```bash
-DOMAIN=carte.raphaelgosset.fr docker compose up -d --build
+docker compose up -d --build
 ```
 L'app écoute sur `127.0.0.1:3180`. Relie-la à ton proxy (voir section 3). Pour changer le port côté hôte : `TERRAIN_PORT=3190`.
 
 **Cas B — rien n'occupe les ports 80/443** : Caddy est fourni et obtient le certificat HTTPS tout seul.
 ```bash
-DOMAIN=carte.raphaelgosset.fr docker compose --profile caddy up -d --build
-```
-
-Pour ne pas avoir à retaper `DOMAIN=…`, mets-le dans un fichier `.env` à côté du `docker-compose.yml` :
-```
-DOMAIN=carte.raphaelgosset.fr
+docker compose --profile caddy up -d --build
 ```
 
 ## 2. Serveur à la maison : rendre l'app joignable
@@ -50,7 +52,7 @@ Points importants pour l'app :
 server {
     server_name carte.raphaelgosset.fr;
     # … listen 443 ssl + certificats (certbot) …
-    client_max_body_size 10m;
+    client_max_body_size 20m;
     location / {
         proxy_pass http://127.0.0.1:3180;
         proxy_set_header Host $host;
@@ -68,7 +70,7 @@ server {
 ```
 proxy_buffering off;
 proxy_read_timeout 1h;
-client_max_body_size 10m;
+client_max_body_size 20m;
 ```
 
 **Traefik** : retire la section `ports:` du service `terrain` et ajoute tes labels habituels, avec le port de service `3180`. Le SSE fonctionne sans réglage particulier.
@@ -97,17 +99,22 @@ Les données sont dans le volume `terrain-data` : elles survivent aux mises à j
 
 ## 6. Sauvegardes
 
-Copie cohérente de la base et des photos, même pendant que l'app tourne. Les sauvegardes de plus de 14 jours sont supprimées :
+**Automatiques** : le conteneur `terrain-backup` (lancé avec les autres) fait une copie cohérente de la base et des fichiers au démarrage, puis chaque nuit à 4 h (`BACKUP_HOUR`). Il garde 14 jours (`BACKUP_DAYS`), dans le volume `terrain-backups`.
 ```bash
-docker compose exec -T terrain npm run backup --silent -- /data/backups 14
+docker compose logs backup        # « Sauvegarde : /backups/2026-… » chaque nuit
 ```
-À programmer chaque nuit avec `crontab -e` sur l'hôte (adapte le chemin) :
+
+**Indispensable : copier ces sauvegardes sur un AUTRE disque** (le volume est sur le même disque que les données : si le disque meurt, tout part avec). Par exemple chaque nuit à 5 h, avec `crontab -e` sur l'hôte (adapte les chemins) :
 ```
-0 4 * * * cd /chemin/vers/terrain && docker compose exec -T terrain npm run backup --silent -- /data/backups 14
+0 5 * * * cd /chemin/vers/terrain && docker compose cp backup:/backups /mnt/autre-disque/sauvegardes-terrain
 ```
-Copier les sauvegardes hors du conteneur, par exemple vers un autre disque :
+Sauvegarde immédiate, à la main :
 ```bash
-docker compose cp terrain:/data/backups ./sauvegardes-terrain
+docker compose exec -T backup node --import tsx server/backup.ts /backups 14
+```
+Copier les sauvegardes sur l'hôte :
+```bash
+docker compose cp backup:/backups ./sauvegardes-terrain
 ```
 
 **Restaurer** (remplace `<date>` par le dossier de la sauvegarde) :
@@ -127,6 +134,6 @@ docker compose start terrain
 | Rien ne répond | `docker compose ps` (état *healthy* ?) puis `docker compose logs -f terrain` |
 | Erreur de certificat (cas B) | DNS ou ports 80/443 non redirigés : `docker compose logs caddy` |
 | Les alertes n'arrivent pas en direct | Le proxy met `/api/stream` en tampon : `proxy_buffering off` (section 3) |
-| Envoi de photo refusé (413) | Limite de taille du proxy : `client_max_body_size 10m` |
+| Envoi de photo ou de document refusé (413) | Limite de taille du proxy : `client_max_body_size 20m` |
 
 **Confidentialité** : la personne qui héberge a accès aux données (base, photos). C'est normal pour un hébergeur, autant le savoir.

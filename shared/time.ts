@@ -34,8 +34,16 @@ function shift(t: number, freq: Point['recurrence'], i: number): number {
   const d = new Date(t);
   if (freq === 'daily') d.setDate(d.getDate() + i);
   else if (freq === 'weekly') d.setDate(d.getDate() + 7 * i);
-  // Attention : un 31 janvier + 1 mois donne le 3 mars (février « déborde »), comportement natif de Date.
-  else if (freq === 'monthly') d.setMonth(d.getMonth() + i);
+  else if (freq === 'monthly') {
+    // Mensuel : même jour du mois, mais ramené au dernier jour si le mois est plus court.
+    // Sans ça, « le 31 de chaque mois » donnait le 3 mars après le 31 janvier (Date « déborde »).
+    const day = d.getDate();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + i);
+    // new Date(année, mois + 1, 0) = le dernier jour du mois (le « jour 0 » du mois suivant).
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(day, last));
+  }
   // 'none' : aucun décalage, on renvoie la date telle quelle.
   return d.getTime();
 }
@@ -55,8 +63,10 @@ export function occurrences(p: Point, from: number, to: number): Occurrence[] {
   // Pas de date de fin de répétition → Infinity (aucune limite).
   const until = p.recurrenceUntil ?? Infinity;
   const out: Occurrence[] = [];
-  // On part TOUJOURS de la 1re occurrence (i = 0) et on avance une période à la fois.
-  for (let i = 0; i < MAX_OCCURRENCES; i++) {
+  // On saute directement près de la fenêtre au lieu de repartir de la 1re occurrence (avant : un
+  // événement quotidien créé il y a deux ans recalculait ~700 dates à chaque affichage).
+  const i0 = firstIndex(p.startsAt, p.recurrence, from - dur);
+  for (let i = i0; i < i0 + MAX_OCCURRENCES; i++) {
     const s = shift(p.startsAt, p.recurrence, i);
     // Les occurrences sont croissantes : dès qu'on dépasse la fenêtre ou la fin de répétition, on arrête.
     if (s > to || s > until) break;
@@ -64,6 +74,23 @@ export function occurrences(p: Point, from: number, to: number): Occurrence[] {
     if (s + dur >= from) out.push({ point: p, start: s, end: s + dur });
   }
   return out;
+}
+
+/**
+ * Indice approximatif de la première occurrence qui peut commencer après `t`, un peu sous-estimé
+ * (marge de 2 périodes pour les changements d'heure et les mois de longueurs différentes). La boucle
+ * de `occurrences` repart de là et vérifie elle-même chaque date : l'estimation n'a pas besoin
+ * d'être exacte, seulement de ne jamais dépasser la bonne valeur.
+ */
+function firstIndex(start: number, freq: Point['recurrence'], t: number): number {
+  if (t <= start) return 0;
+  if (freq === 'daily') return Math.max(0, Math.floor((t - start) / 86_400_000) - 2);
+  if (freq === 'weekly') return Math.max(0, Math.floor((t - start) / (7 * 86_400_000)) - 2);
+  if (freq === 'monthly') {
+    const a = new Date(start), b = new Date(t);
+    return Math.max(0, (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth() - 2);
+  }
+  return 0;
 }
 
 /** Prochaine occurrence en cours ou à venir. */

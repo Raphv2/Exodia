@@ -16,8 +16,8 @@
  */
 import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
-import { db } from './db';
-import { hasSpace, newId, parseSpaces } from './auth';
+import { db, tx } from './db';
+import { hasSpace, newId, parseSpaces, rateLimit } from './auth';
 import { broadcast } from './events';
 import type { ChatEpochKey, ChatMember, ChatMessage } from '../shared/model';
 
@@ -84,12 +84,27 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS chat_messages_time ON chat_messages(created_at);
 `);
+// La colonne chat_epochs.members n'était jamais relue (les membres d'une époque sont ceux de ses
+// enveloppes, table chat_wraps) : on la supprime des anciennes bases. DROP COLUMN existe depuis
+// SQLite 3.35 (inclus dans Node 22). try/catch : sans effet si elle n'existe pas.
+if ((db.prepare('PRAGMA table_info(chat_epochs)').all() as { name: string }[]).some((c) => c.name === 'members')) {
+  try { db.exec('ALTER TABLE chat_epochs DROP COLUMN members'); } catch { /* ancienne version de SQLite : on la laisse */ }
+}
+// Index pour la pagination (date, puis id pour départager deux messages de la même milliseconde).
+db.exec('CREATE INDEX IF NOT EXISTS chat_messages_cursor ON chat_messages(created_at, id)');
 
 // Caractères autorisés pour du base64 / base64url : on refuse tout le reste (pas d'injection de texte arbitraire).
 const B64 = /^[A-Za-z0-9+/=_-]+$/;
 /** Clé publique : JWK EC P-256 (x, y en base64url), rien d'autre. */
 // .strict() rejette tout champ en plus (ex. un champ « d », qui serait une clé PRIVÉE envoyée par erreur).
 const jwkSchema = z.object({ kty: z.literal('EC'), crv: z.literal('P-256'), x: z.string().regex(B64).max(64), y: z.string().regex(B64).max(64) }).strict();
+// Une clé publique telle que stockée : le JSON exact {"kty":"EC","crv":"P-256","x":"…","y":"…"}.
+const KEY_TEXT = /^\{"kty":"EC","crv":"P-256","x":"[A-Za-z0-9_-]{20,64}","y":"[A-Za-z0-9_-]{20,64}"\}$/;
+
+// Limites de débit par appareil (pas par IP) : de quoi discuter normalement, pas de quoi remplir le disque.
+const byDevice = { key: (req: import('express').Request) => `dev:${req.device?.id ?? req.ip}` };
+const messageLimit = rateLimit(60, 60_000, { ...byDevice, message: 'Trop de messages d\'un coup, ralentis un peu.' });
+const epochLimit = rateLimit(10, 60_000, byDevice);
 
 // Le routeur exporté, monté par server/index.ts.
 export const chat = Router();
@@ -151,7 +166,7 @@ chat.put('/chat/key', requireMvt, (req, res) => {
  */
 chat.get('/chat/state', requireMvt, (req, res) => {
   // L'époque la plus récente = le plus grand id (AUTOINCREMENT garantit des id croissants).
-  const last = db.prepare('SELECT id FROM chat_epochs ORDER BY id DESC LIMIT 1').get() as { id: number } | undefined;
+  const last = db.prepare('SELECT id, created_at FROM chat_epochs ORDER BY id DESC LIMIT 1').get() as { id: number; created_at: number } | undefined;
   // Membres de la dernière époque, avec la clé pour laquelle chacun a reçu son enveloppe.
   const lastMembers = last
     ? (db.prepare('SELECT device_id AS id, recipient_key AS key FROM chat_wraps WHERE epoch_id = ?').all(last.id) as { id: string; key: string }[])
@@ -163,7 +178,7 @@ chat.get('/chat/state', requireMvt, (req, res) => {
   const keys: ChatEpochKey[] = mine.map((w) => ({ epochId: w.epoch_id, senderId: w.sender_id, senderKey: w.sender_key, recipientKey: w.recipient_key, wrapped: w.wrapped, iv: w.iv }));
   res.json({
     members: members(),
-    lastEpoch: last ? { id: last.id, members: lastMembers } : null,
+    lastEpoch: last ? { id: last.id, createdAt: last.created_at, members: lastMembers } : null,
     keys,
   });
 });
@@ -175,16 +190,16 @@ chat.get('/chat/state', requireMvt, (req, res) => {
  * Le serveur ne peut pas vérifier le CONTENU des enveloppes (chiffré), mais il vérifie qu'il y en a une
  * pour chaque membre actuel, faite pour sa clé actuelle, et que l'auteur se présente avec SA vraie clé.
  */
-chat.post('/chat/epochs', requireMvt, (req, res) => {
+chat.post('/chat/epochs', requireMvt, epochLimit, (req, res) => {
   // Validation de forme et de taille (bornes « max » = protection contre des envois énormes).
   const body = z.object({
     wraps: z.array(z.object({
       deviceId: z.string().min(8).max(40),
       wrapped: z.string().regex(B64).max(200),
       iv: z.string().regex(B64).max(40),
-      recipientKey: z.string().max(400),
+      recipientKey: z.string().regex(KEY_TEXT),
     })).min(1).max(500),
-    senderKey: z.string().max(400),
+    senderKey: z.string().regex(KEY_TEXT),
   }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Données invalides' });
   // Le groupe tel que le serveur le voit maintenant.
@@ -207,24 +222,15 @@ chat.post('/chat/epochs', requireMvt, (req, res) => {
     return res.status(409).json({ error: 'La liste des membres a changé, réessaie.' });
   }
   const now = Date.now();
-  // Transaction : soit l'époque ET toutes ses enveloppes sont enregistrées, soit rien (pas d'époque à moitié créée).
-  db.exec('BEGIN');
-  try {
-    // L'époque garde aussi la liste d'ids (colonne members), à titre de trace.
-    const r = db.prepare('INSERT INTO chat_epochs (members, created_by, created_at) VALUES (?, ?, ?)').run(JSON.stringify(ids), req.device!.id, now);
-    // Numéro de la nouvelle époque, attribué par SQLite.
-    const epochId = Number(r.lastInsertRowid);
-    // Requête préparée une fois, exécutée pour chaque enveloppe.
+  // L'époque et toutes ses enveloppes : ensemble ou pas du tout (transaction).
+  const epochId = tx(() => {
+    const r = db.prepare('INSERT INTO chat_epochs (created_by, created_at) VALUES (?, ?)').run(req.device!.id, now);
+    const id = Number(r.lastInsertRowid);
     const ins = db.prepare('INSERT INTO chat_wraps (epoch_id, device_id, sender_id, sender_key, recipient_key, wrapped, iv) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    // sender_id et sender_key viennent du serveur (l'appareil authentifié), pas du corps de la requête.
-    for (const w of body.data.wraps) ins.run(epochId, w.deviceId, req.device!.id, me, w.recipientKey, w.wrapped, w.iv);
-    db.exec('COMMIT');
-    res.status(201).json({ epochId });
-  } catch (e) {
-    // En cas d'erreur, on annule tout, puis on laisse le gestionnaire d'erreurs d'index.ts répondre 500.
-    db.exec('ROLLBACK');
-    throw e;
-  }
+    for (const w of body.data.wraps) ins.run(id, w.deviceId, req.device!.id, me, w.recipientKey, w.wrapped, w.iv);
+    return id;
+  });
+  res.status(201).json({ epochId });
 });
 
 /** Messages chiffrés (les plus récents d'abord, par pages). */
@@ -235,16 +241,31 @@ chat.post('/chat/epochs', requireMvt, (req, res) => {
  * c'est le client qui affichera « illisible ». Le nom de l'expéditeur vient de la table devices
  * (LEFT JOIN : null si l'appareil a été supprimé).
  */
+// Pagination par CURSEUR « date:id » plutôt que par date seule : deux messages envoyés dans la même
+// milliseconde ne peuvent plus être perdus à la frontière entre deux pages.
+//  - ?before=<date>:<id> : les PAGE messages juste avant ce curseur (remonter l'historique) ;
+//  - ?after=<date>:<id>  : les messages juste après (rattraper une rafale, du plus ancien au plus récent) ;
+//  - sans paramètre : les PAGE plus récents.
+const PAGE = 100;
+const parseCursor = (v: unknown): [number, string] | null => {
+  const m = typeof v === 'string' ? /^(\d{1,15}):([A-Za-z0-9_-]{0,40})$/.exec(v) : null;
+  return m ? [Number(m[1]), m[2]] : null;
+};
 chat.get('/chat/messages', requireMvt, (req, res) => {
-  // Number(undefined) = NaN, et NaN || x = x : valeur par défaut si le paramètre est absent ou invalide.
-  const before = Number(req.query.before) || Date.now() + 1;
-  const rows = db.prepare(`SELECT m.id, m.epoch_id, m.sender_id, m.iv, m.ciphertext, m.created_at, d.name AS sender_name
-    FROM chat_messages m LEFT JOIN devices d ON d.id = m.sender_id
-    WHERE m.created_at < ? ORDER BY m.created_at DESC LIMIT 60`).all(before) as {
+  const before = parseCursor(req.query.before);
+  const after = parseCursor(req.query.after);
+  const base = `SELECT m.id, m.epoch_id, m.sender_id, m.iv, m.ciphertext, m.created_at, d.name AS sender_name
+    FROM chat_messages m LEFT JOIN devices d ON d.id = m.sender_id`;
+  // (a, b) < (?, ?) : comparaison de « tuples » de SQLite : d'abord la date, puis l'id en cas d'égalité.
+  const rows = (after
+    ? db.prepare(`${base} WHERE (m.created_at, m.id) > (?, ?) ORDER BY m.created_at, m.id LIMIT ${PAGE}`).all(after[0], after[1])
+    : before
+      ? db.prepare(`${base} WHERE (m.created_at, m.id) < (?, ?) ORDER BY m.created_at DESC, m.id DESC LIMIT ${PAGE}`).all(before[0], before[1])
+      : db.prepare(`${base} ORDER BY m.created_at DESC, m.id DESC LIMIT ${PAGE}`).all()) as {
       id: string; epoch_id: number; sender_id: string; iv: string; ciphertext: string; created_at: number; sender_name: string | null }[];
   // Conversion vers le format JSON partagé avec le client (shared/model.ts).
   const out: ChatMessage[] = rows.map((r) => ({ id: r.id, epochId: r.epoch_id, senderId: r.sender_id, senderName: r.sender_name, iv: r.iv, ciphertext: r.ciphertext, createdAt: r.created_at }));
-  res.json({ messages: out });
+  res.json({ messages: out, page: PAGE });
 });
 
 /** Envoyer un message chiffré : seulement dans une époque dont je fais partie. */
@@ -253,7 +274,7 @@ chat.get('/chat/messages', requireMvt, (req, res) => {
  * 403 si je n'ai pas d'enveloppe pour cette époque ; 409 si l'époque ne correspond plus au groupe actuel.
  * La taille max (16 000 caractères base64 ≈ 12 Ko) borne la longueur d'un message.
  */
-chat.post('/chat/messages', requireMvt, (req, res) => {
+chat.post('/chat/messages', requireMvt, messageLimit, (req, res) => {
   const body = z.object({ epochId: z.number().int().positive(), iv: z.string().regex(B64).max(40), ciphertext: z.string().regex(B64).max(16_000) }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Message trop long ou invalide' });
   // Ai-je une enveloppe pour cette époque ? Sinon je n'en fais pas partie et n'ai rien à y écrire.

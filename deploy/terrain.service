@@ -28,31 +28,72 @@ Environment=PORT=3180
 Environment=PUBLIC_URL=https://__DOMAIN__
 Environment=TRUST_PROXY=1
 Environment=DATA_DIR=/var/lib/terrain
+# Heure locale : événements répétés et fin des blocus calculés en heure de Paris.
+Environment=TZ=Europe/Paris
 # Lancement : Node exécute le TypeScript grâce à tsx ; l'avertissement de node:sqlite est masqué.
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning --import tsx server/index.ts
 # Relance automatique, quelle que soit la cause de l'arrêt, après 3 secondes.
 Restart=always
 RestartSec=3
 
-# Durcissement : l'app ne peut écrire que dans ses données.
-# Le processus ne peut jamais obtenir plus de droits (setuid, sudo...).
+# Durcissement : l'app ne peut écrire que dans ses données, et n'a accès qu'au strict nécessaire.
+# Le code (/opt/terrain) appartient de toute façon à un autre compte (terrain-deploy) : même
+# compromise, l'app ne peut pas réécrire son propre code.
+# Pour vérifier le résultat sur le serveur : systemd-analyze security terrain
+#
+# Droits : le processus ne peut jamais obtenir plus de droits (setuid, sudo...) ;
 NoNewPrivileges=true
-# Tout le système de fichiers est en lecture seule pour le service (sauf ReadWritePaths) ;
+# aucune « capacité » Linux (ces morceaux des pouvoirs de root) : liste vide = aucune, ni héritée
+# (CapabilityBoundingSet) ni accordée au démarrage (AmbientCapabilities). Le port 3180 n'en a pas besoin.
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Fichiers créés par l'app (base, photos) lisibles par son seul compte (droits 600 / 700).
+UMask=0077
+#
+# Système de fichiers : tout est en lecture seule pour le service (sauf ReadWritePaths) ;
 ProtectSystem=strict
 # /home et /root sont invisibles ;
 ProtectHome=true
 # /tmp privé, propre au service ; pas d'accès aux périphériques matériels ;
 PrivateTmp=true
 PrivateDevices=true
-# interdiction de modifier les réglages du noyau, d'en charger des modules, de toucher aux cgroups ;
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-# interdiction de créer des fichiers setuid/setgid ; mode d'exécution du processeur figé ;
-RestrictSUIDSGID=true
-LockPersonality=true
 # seul dossier accessible en écriture : celui des données.
 ReadWritePaths=/var/lib/terrain
+#
+# Noyau : interdiction de modifier ses réglages, d'en charger des modules, de lire son journal,
+# de toucher aux cgroups, à l'horloge et au nom de la machine ;
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+# /proc : les processus des autres comptes sont invisibles (invisible), et seuls les dossiers
+# des processus y figurent (pid) : pas de /proc/sys, /proc/meminfo, etc. Si un jour Node se
+# plaignait de ne pas trouver un fichier de /proc, c'est ProcSubset=pid qu'il faudrait retirer.
+ProtectProc=invisible
+ProcSubset=pid
+#
+# Réseau : seulement IPv4, IPv6 et les sockets locales (Unix). Pas de raw socket, netlink, etc.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+#
+# Appels système (les « fonctions » du noyau) : seulement ceux d'un service ordinaire
+# (@system-service) ; un appel interdit échoue avec « permission refusée » au lieu de tuer le
+# processus. Seule l'architecture native du processeur est acceptée (pas d'appels 32 bits).
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+#
+# Divers : pas de nouveaux « espaces de noms » (conteneurs), pas de priorité temps réel,
+# pas de fichiers setuid/setgid, mode d'exécution du processeur figé, mémoire partagée IPC
+# effacée à l'arrêt.
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+# NE PAS ajouter MemoryDenyWriteExecute=true : le moteur JavaScript de Node (V8) compile le code
+# à la volée (JIT) et a besoin de mémoire à la fois inscriptible et exécutable. L'app planterait.
 
 # [Install] : « systemctl enable terrain » rattache le service au démarrage normal de la machine.
 [Install]

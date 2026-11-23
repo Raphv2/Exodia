@@ -28,10 +28,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 // Importer './auth' importe aussi './db' : la base est ouverte et le schéma vérifié dès ici.
 import { csrf, ensureBootstrapAdmin, requireDevice } from './auth';
+import { db } from './db';
 // Chaque fichier routes-*.ts exporte un ou plusieurs Router (et parfois des fonctions de ménage).
 import { access } from './routes-access';
 import { points, cleanup, releaseBlocages } from './routes-points';
-import { votes, publicVotes } from './routes-votes';
+import { votes, publicVotes, closeStaleVotes } from './routes-votes';
 import { archive, publicArchive, cleanupArchive } from './routes-archive';
 import { chat, cleanupChat } from './routes-chat';
 import { stream } from './events';
@@ -57,13 +58,23 @@ app.disable('x-powered-by');
 // Derrière un reverse-proxy HTTPS (Caddy, Nginx, Render…) : TRUST_PROXY=1
 // « trust proxy » dit à Express de croire les en-têtes X-Forwarded-* posés par le proxy : req.ip
 // devient la vraie IP du visiteur (indispensable pour rateLimit) et req.secure reflète le HTTPS.
-// `Number(...) || valeur` : si TRUST_PROXY est un nombre (ex. 1 = « un proxy devant moi »), on le
-// passe en nombre ; sinon (ex. 'loopback' ou une IP), Number donne NaN (faux) et on garde le texte.
-if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
+// Valeurs acceptées : un nombre (ex. 1 = « un proxy devant moi »), true/false, ou un texte compris
+// par Express (ex. 'loopback' ou une liste d'IP). Avant, TRUST_PROXY=true était passé comme le TEXTE
+// 'true', qu'Express aurait pris pour une adresse IP (donc aucun proxy reconnu).
+function parseTrustProxy(v: string): boolean | number | string {
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return /^\d+$/.test(v) ? Number(v) : v;
+}
+if (process.env.TRUST_PROXY) app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 
 // Middleware global : en-têtes de sécurité ajoutés à TOUTES les réponses (API et fichiers).
 // `_req` : le `_` signale un paramètre volontairement inutilisé.
-app.use((_req, res, next) => {
+app.use((req, res, next) => {
+  // HSTS : en HTTPS, on demande au navigateur de ne plus JAMAIS revenir en HTTP simple sur ce
+  // domaine pendant un an (empêche qu'un Wi-Fi piégé « rétrograde » la connexion). Seulement en
+  // HTTPS : en développement (http://localhost), l'en-tête serait ignoré de toute façon.
+  if (req.secure) res.set('Strict-Transport-Security', 'max-age=31536000');
   res.set({
     // Interdit au navigateur de « deviner » le type d'un fichier (ex. exécuter une image comme script).
     'X-Content-Type-Options': 'nosniff',
@@ -81,8 +92,10 @@ app.use((_req, res, next) => {
       "default-src 'self'",
       // Scripts : seulement nos fichiers (pas de script inline, pas de CDN).
       "script-src 'self'",
-      // Styles : nos fichiers + les attributs style="" (nécessaires à Leaflet, qui positionne en inline).
-      "style-src 'self' 'unsafe-inline'",
+      // Styles : seulement nos fichiers CSS. Pas de 'unsafe-inline' : un attribut style="..." injecté
+      // dans la page serait ignoré. Les styles posés par JavaScript (Leaflet, MapLibre, nos variables
+      // CSS via style.setProperty) passent par le CSSOM et restent autorisés.
+      "style-src 'self'",
       // Images : nos fichiers, les images encodées (data:), les aperçus locaux (blob:, ex. photo
       // avant envoi) et les tuiles de carte OpenStreetMap.
       "img-src 'self' data: blob: https://tile.openstreetmap.org",
@@ -109,6 +122,11 @@ const api = express.Router();
 // refuse (erreur 413) — protège contre l'envoi d'énormes requêtes. (Les photos passent par
 // d'autres routes, qui lisent le corps elles-mêmes.)
 api.use(express.json({ limit: '100kb' }));
+// GET /api/health : bilan de santé pour Docker / systemd / la supervision. Vérifie que la base
+// répond (une requête triviale) ; 200 si tout va bien, 503 sinon. Aucune donnée renvoyée.
+api.get('/health', (_req, res) => {
+  try { db.prepare('SELECT 1').get(); res.json({ ok: true }); } catch { res.status(503).json({ ok: false }); }
+});
 // Vérifie l'en-tête X-Terrain sur toute requête qui modifie quelque chose (voir auth.ts).
 api.use(csrf);
 // Routes d'accès : /auth/claim (rejoindre), /me, /invites, /devices… Elles sont montées SANS
@@ -134,9 +152,17 @@ api.use(requireDevice, chat);
 // générique (on ne divulgue pas de détails internes). Si l'erreur porte un code HTTP (`status`,
 // ex. 413 posé par express.json), on le réutilise ; sinon 500.
 // `(err as { status?: number })` : on dit à TypeScript que l'erreur PEUT avoir un champ status.
-api.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+// Route d'API inconnue (avec un cookie valide, sinon requireDevice a déjà répondu 401) : 404 en JSON.
+// Sans cette ligne, en production, la requête tombait sur le « fallback » qui renvoie la page HTML (200).
+api.use((_req, res) => res.status(404).json({ error: 'Route inconnue' }));
+api.use((err: Error & { status?: number; type?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const status = err.status ?? 500;
+  // Erreurs « normales » du client : JSON mal formé (400) ou corps trop gros (413). Un message clair,
+  // et pas de trace dans les journaux. Les autres sont de vraies erreurs serveur : on les journalise.
+  if (status === 413) return res.status(413).json({ error: 'Envoi trop volumineux.' });
+  if (status === 400 && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Requête mal formée.' });
   console.error(err);
-  res.status((err as { status?: number }).status ?? 500).json({ error: 'Erreur serveur' });
+  res.status(status).json({ error: status < 500 ? 'Requête refusée.' : 'Erreur serveur' });
 });
 // Branche tout le routeur sous /api : la route '/me' du routeur devient '/api/me'.
 app.use('/api', api);
@@ -164,7 +190,9 @@ cleanupChat();
 // Puis toutes les heures (3600_000 ms). `.unref()` : ces minuteurs n'empêchent pas Node de quitter.
 setInterval(() => { cleanup(); cleanupArchive(); cleanupChat(); }, 3600_000).unref();
 // Toutes les minutes : les blocages « tenus » d'un blocus terminé passent à « sans personne ».
-setInterval(releaseBlocages, 60_000).unref();
+// Et les votes restés ouverts après la fin de leur AG sont clos automatiquement.
+setInterval(() => { releaseBlocages(); closeStaleVotes(); }, 60_000).unref();
+closeStaleVotes();
 
 // HOST=127.0.0.1 en production : seul le reverse proxy (Caddy) peut joindre l'app.
 // onListen est appelée une fois que le serveur écoute réellement sur le port.

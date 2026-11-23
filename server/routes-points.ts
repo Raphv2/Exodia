@@ -48,10 +48,14 @@ import path from 'node:path';
 // zod : bibliothèque de validation. On décrit la forme attendue des données, zod vérifie ce que le client envoie.
 import { z } from 'zod';
 // db = la connexion SQLite partagée ; UPLOAD_DIR = le dossier où sont rangées les photos (data/uploads).
-import { db, UPLOAD_DIR } from './db';
+import { db, tx, UPLOAD_DIR } from './db';
+// Registre des fichiers envoyés : qui a envoyé quelle photo, pour empêcher de réutiliser celle d'un autre.
+import { registerUpload, uploaderOf, forgetUpload, claimError } from './uploads';
+// Retire les métadonnées (EXIF, position GPS…) des photos reçues.
+import { sanitize } from './sanitize';
 // newId : identifiant aléatoire ; hasSpace : l'appareil a-t-il accès à tel espace ?
 // `type DeviceRow` : on n'importe qu'un TYPE (il disparaît à la compilation, aucun code n'est chargé).
-import { newId, hasSpace, type DeviceRow } from './auth';
+import { newId, hasSpace, spacesOf, type DeviceRow } from './auth';
 // broadcast : envoie un événement temps réel aux appareils connectés (voir events.ts).
 import { broadcast } from './events';
 // Le modèle partagé client/serveur (shared/model.ts) : types de points, états possibles, couleurs, règles…
@@ -379,9 +383,11 @@ const canEdit = (me: DeviceRow, row: PointRow) => (me.role === 'admin' && hasSpa
 
 // GET /points : la carte entière. Renvoie tous les points des espaces de l'appareil.
 // Les points de l'autre espace sont retirés par le filter, ils ne quittent jamais le serveur.
+// `?space=mvt` : seulement cet espace. Le filtre est fait PAR LA BASE (WHERE), au lieu de tout
+// charger puis trier en JavaScript ; sans paramètre, tous les espaces de l'appareil.
 points.get('/points', (req, res) => {
-  const rows = (db.prepare(`${SELECT} ORDER BY p.created_at`).all() as unknown as PointRow[])
-    .filter((r) => hasSpace(req.device!, r.space));
+  const wanted = spacesOf(req.device!).filter((s) => !req.query.space || s === req.query.space);
+  const rows = (wanted.length ? db.prepare(`${SELECT} WHERE p.space IN (${wanted.map(() => '?').join(',')}) ORDER BY p.created_at`).all(...wanted) : []) as unknown as PointRow[];
   // Problèmes et engagements de tous les points chargés en 2 requêtes au total (pas une par point).
   const problems = activeProblems();
   const pledges = pledgesFor();
@@ -403,20 +409,15 @@ points.post('/points', (req, res) => {
   // On applique les règles métier ; un texte renvoyé = une erreur à afficher.
   const n = normalize(parsed.data, undefined, space);
   if (typeof n === 'string') return res.status(400).json({ error: n });
+  // Photo jointe : elle doit avoir été envoyée par CET appareil et n'appartenir à aucun autre point.
+  if (n.photo) {
+    const err = claimError(n.photo, 'photo', req.device!.id, photoUsed(n.photo));
+    if (err) return res.status(400).json({ error: err });
+  }
   const id = newId();
   const now = Date.now();
   // Nouveau blocus sans couleur choisie : on lui en attribue une automatiquement.
-  if (n.type === 'blocus' && !n.color) {
-    // Une couleur différente pour chaque blocus en cours : ses blocages la reprennent sur la carte.
-    // Couleurs déjà prises par les blocus en cours de cet espace. COALESCE(color, ?) : un blocus sans couleur
-    // a en fait la couleur par défaut du type. « En cours » = pas d'expiration ou expiration dans le futur.
-    const used = new Set((db.prepare(`SELECT COALESCE(color, ?) AS c FROM points
-      WHERE type = 'blocus' AND space = ? AND (expires_at IS NULL OR expires_at > ?)`).all(TYPES.blocus.color, space, now) as { c: string }[]).map((r) => r.c));
-    // La première couleur libre de la palette ; si toutes sont prises, on reboucle (modulo %) sur la palette.
-    const free = BLOCUS_COLORS.find((c) => !used.has(c)) ?? BLOCUS_COLORS[used.size % BLOCUS_COLORS.length];
-    // On stocke null plutôt que la couleur par défaut (le client l'appliquera tout seul).
-    n.color = free === TYPES.blocus.color ? null : free;
-  }
+  if (n.type === 'blocus' && !n.color) n.color = autoBlocusColor(space, now);
   // Insertion : 24 colonnes, 24 `?`, 24 valeurs dans le même ordre. Les valeurs ne sont jamais collées
   // dans le texte SQL : SQLite les reçoit à part (aucune injection possible).
   db.prepare(`INSERT INTO points (id, mode, type, title, description, lat, lng, color, photo, starts_at, ends_at,
@@ -447,10 +448,19 @@ points.put('/points/:id', (req, res) => {
   // Pas de 3e argument : l'espace est celui du point existant ; `space` envoyé par le client est ignoré.
   const n = normalize(parsed.data, row);
   if (typeof n === 'string') return res.status(400).json({ error: n });
+  // Nouvelle photo (différente de l'actuelle) : mêmes règles qu'à la création.
+  if (n.photo && n.photo !== row.photo) {
+    const err = claimError(n.photo, 'photo', req.device!.id, photoUsed(n.photo, row.id));
+    if (err) return res.status(400).json({ error: err });
+  }
   const now = Date.now();
+  // Un point qui DEVIENT un blocus (et sans couleur choisie) reçoit lui aussi une couleur libre.
+  if (n.type === 'blocus' && row.type !== 'blocus' && !n.color) n.color = autoBlocusColor(row.space, now, row.id);
   // Date du dernier changement d'état : inchangée si l'état n'a pas bougé, maintenant s'il a changé,
   // null si le point n'a plus d'état. (Ternaire imbriqué : a ? b : c ? d : e.)
   const statusAt = n.status === row.status ? row.status_at : n.status ? now : null;
+  // Toutes les écritures qui suivent forment un tout : tx() les applique ensemble ou pas du tout.
+  tx(() => {
   // On réécrit tous les champs modifiables. space, created_by et created_at ne bougent jamais.
   db.prepare(`UPDATE points SET mode=?, type=?, title=?, description=?, lat=?, lng=?, color=?, photo=?, starts_at=?, ends_at=?,
               recurrence=?, recurrence_until=?, expires_at=?, status=?, status_at=?, parent_id=?, material=?, flash=?, public=?, updated_at=? WHERE id=?`)
@@ -469,7 +479,8 @@ points.put('/points/:id', (req, res) => {
   if (row.type === 'blocus' && n.type !== 'blocus') db.prepare('UPDATE points SET parent_id = NULL WHERE parent_id = ?').run(row.id);
   // Les dates du blocus ont pu changer (fin avancée…) : on vérifie tout de suite s'il faut libérer ses blocages.
   if (row.type === 'blocus') releaseBlocages();
-  // Photo remplacée ou retirée : on supprime l'ancien fichier du disque.
+  });
+  // Photo remplacée ou retirée : on supprime l'ancien fichier du disque (après la transaction réussie).
   if (row.photo && row.photo !== n.photo) removePhoto(row.photo);
   broadcast('points', { id: row.id, by: req.device!.id, action: 'update' }, row.space);
   res.json({ point: pointDto(row.id)! });
@@ -684,9 +695,12 @@ points.delete('/points/:id', (req, res) => {
   if (!canEdit(req.device!, row)) return res.status(403).json({ error: 'Seul·e l\'auteur·rice ou un admin peut supprimer ce point.' });
   // Grâce à PRAGMA foreign_keys = ON (db.ts) et aux « ON DELETE CASCADE », les problèmes, engagements
   // et votes liés à ce point sont supprimés automatiquement par SQLite.
-  db.prepare('DELETE FROM points WHERE id = ?').run(row.id);
-  // Si c'était un blocus, ses blocages restent sur la carte mais ne lui sont plus rattachés.
-  db.prepare('UPDATE points SET parent_id = NULL WHERE parent_id = ?').run(row.id);
+  // Les deux écritures ensemble (transaction) : pas de blocages orphelins si l'une échoue.
+  tx(() => {
+    db.prepare('DELETE FROM points WHERE id = ?').run(row.id);
+    // Si c'était un blocus, ses blocages restent sur la carte mais ne lui sont plus rattachés.
+    db.prepare('UPDATE points SET parent_id = NULL WHERE parent_id = ?').run(row.id);
+  });
   if (row.photo) removePhoto(row.photo);
   broadcast('points', { id: row.id, by: req.device!.id, action: 'delete' }, row.space);
   res.json({ ok: true });
@@ -710,10 +724,32 @@ function sniff(buf: Buffer): 'jpg' | 'png' | 'webp' | null {
 
 // Supprime une photo du disque. On revérifie le nom avec PHOTO_RE : impossible de supprimer
 // autre chose qu'une photo, même si un nom piégé arrivait jusqu'ici.
+// Sécurité supplémentaire : si un autre point utilise encore ce fichier, on ne l'efface pas.
 function removePhoto(name: string) {
-  if (!PHOTO_RE.test(name)) return;
+  if (!PHOTO_RE.test(name) || photoUsed(name)) return;
+  forgetUpload(name);
   // fs.rm asynchrone ; force: true = pas d'erreur si le fichier n'existe déjà plus ; le callback vide ignore les erreurs.
   fs.rm(path.join(UPLOAD_DIR, name), { force: true }, () => {});
+}
+
+/** Cette photo est-elle déjà rattachée à un point (autre que `exceptId`) ? */
+function photoUsed(name: string, exceptId = ''): boolean {
+  return !!db.prepare('SELECT 1 FROM points WHERE photo = ? AND id != ?').get(name, exceptId);
+}
+
+/**
+ * Couleur automatique d'un blocus : une couleur différente pour chaque blocus en cours de l'espace,
+ * que ses blocages reprennent sur la carte. `exceptId` : le point lui-même (cas d'une modification).
+ * Renvoie null pour la couleur par défaut du type (le client l'applique tout seul).
+ */
+function autoBlocusColor(space: string, now: number, exceptId = ''): string | null {
+  // Couleurs déjà prises. COALESCE(color, ?) : un blocus sans couleur a la couleur par défaut du type.
+  // « En cours » = pas d'expiration ou expiration dans le futur.
+  const used = new Set((db.prepare(`SELECT COALESCE(color, ?) AS c FROM points
+    WHERE type = 'blocus' AND space = ? AND id != ? AND (expires_at IS NULL OR expires_at > ?)`).all(TYPES.blocus.color, space, exceptId, now) as { c: string }[]).map((r) => r.c));
+  // La première couleur libre de la palette ; si toutes sont prises, on reboucle (modulo %) sur la palette.
+  const free = BLOCUS_COLORS.find((c) => !used.has(c)) ?? BLOCUS_COLORS[used.size % BLOCUS_COLORS.length];
+  return free === TYPES.blocus.color ? null : free;
 }
 
 // POST /photos : envoi d'une photo (étape 1 ; l'étape 2 est de mettre son nom dans un point).
@@ -730,7 +766,10 @@ points.post('/photos', express.raw({ type: ['image/jpeg', 'image/png', 'image/we
   // Nom aléatoire généré par le serveur : on n'utilise jamais le nom choisi par le client.
   const name = `${newId()}.${ext}`;
   // Écriture synchrone sur le disque (bloque le serveur le temps de l'écriture, acceptable pour quelques Mo).
-  fs.writeFileSync(path.join(UPLOAD_DIR, name), buf);
+  // On enregistre la photo SANS ses métadonnées (position GPS, modèle du téléphone…).
+  fs.writeFileSync(path.join(UPLOAD_DIR, name), sanitize(buf, ext));
+  // On retient que CET appareil a envoyé ce fichier : lui seul pourra le rattacher à un point.
+  registerUpload(name, 'photo', req.device!.id);
   // Le client reçoit le nom, qu'il renverra dans le champ `photo` du point.
   res.status(201).json({ photo: name });
 });
@@ -742,8 +781,9 @@ points.get('/photos/:name', (req, res) => {
   // À quel point (et donc quel espace) appartient cette photo ?
   const of = db.prepare('SELECT space FROM points WHERE photo = ?').get(req.params.name) as { space: string } | undefined;
   // Photo d'un point de l'autre espace : 404, comme si elle n'existait pas.
-  // (Une photo pas encore rattachée à un point n'a pas d'espace : elle reste visible par tout appareil connecté.)
   if (of && !hasSpace(req.device!, of.space)) return res.status(404).end();
+  // Photo pas encore rattachée à un point : seul l'appareil qui l'a envoyée peut la voir (aperçu du formulaire).
+  if (!of && uploaderOf(req.params.name, 'photo') !== req.device!.id) return res.status(404).end();
   // Le navigateur peut la garder en cache 7 jours (604800 s) : un nom de photo ne change jamais de contenu (immutable).
   // private : seulement le cache du navigateur, pas les caches partagés (proxies).
   res.set('Cache-Control', 'private, max-age=604800, immutable');
@@ -793,9 +833,10 @@ export function releaseBlocages() {
   if (!released.length) return;
   // Requête préparée une seule fois puis exécutée pour chaque blocage.
   const upd = db.prepare("UPDATE points SET status = 'vide', status_at = ?, updated_at = ? WHERE id = ?");
-  for (const id of released) upd.run(now, now, id);
-  // Un seul événement suffit à faire recharger la carte côté client ; les blocages sont toujours côté Mouvement.
-  broadcast('points', { id: released[0], action: 'update' }, 'mvt');
+  tx(() => { for (const id of released) upd.run(now, now, id); });
+  // Un seul événement suffit à faire recharger la carte côté client ; il porte TOUS les ids libérés.
+  // Les blocages n'existent que côté Mouvement (typeInSpace), d'où l'espace 'mvt'.
+  broadcast('points', { id: released[0], ids: released, action: 'update' }, 'mvt');
 }
 
 // ---------- Ménage périodique ----------
@@ -817,12 +858,17 @@ export function cleanup() {
   const used = new Set((db.prepare('SELECT photo FROM points WHERE photo IS NOT NULL').all() as { photo: string }[]).map((r) => r.photo));
   // readdirSync : liste les fichiers du dossier des photos.
   for (const f of fs.readdirSync(UPLOAD_DIR)) {
-    if (used.has(f)) continue;
+    // Seulement les photos (le dossier contient aussi le sous-dossier « archive »).
+    if (used.has(f) || !PHOTO_RE.test(f)) continue;
     // statSync : infos du fichier ; mtimeMs = date de dernière modification. Plus de 24 h et inutilisée → supprimée
     // (le délai laisse le temps de créer le point après avoir envoyé la photo).
-    const st = fs.statSync(path.join(UPLOAD_DIR, f));
-    if (now - st.mtimeMs > 24 * 3600_000) removePhoto(f);
+    // try/catch : le fichier a pu disparaître entre readdirSync et statSync ; ce n'est pas une erreur.
+    try {
+      if (now - fs.statSync(path.join(UPLOAD_DIR, f)).mtimeMs > 24 * 3600_000) removePhoto(f);
+    } catch { /* déjà supprimé */ }
   }
+  // Registre des envois : on oublie les lignes de plus de 2 jours dont le fichier n'existe plus.
+  db.prepare("DELETE FROM uploads WHERE kind = 'photo' AND created_at < ? AND name NOT IN (SELECT photo FROM points WHERE photo IS NOT NULL)").run(now - 2 * 86400_000);
   // Problèmes réglés ou expirés depuis plus d'un jour.
   // COALESCE prend la première valeur non NULL : la date de résolution si réglé, sinon la date d'expiration.
   db.prepare('DELETE FROM problems WHERE COALESCE(resolved_at, expires_at) < ?').run(now - 86400_000);

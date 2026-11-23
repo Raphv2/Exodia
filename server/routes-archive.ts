@@ -16,12 +16,16 @@
  * - DTO (« objet de transfert ») : la forme JSON envoyée au client, distincte de la ligne SQL brute.
  * - Requêtes préparées (db.prepare + ?) : les valeurs sont passées à part, ce qui empêche l'injection SQL.
  */
-import express, { Router, type Request } from 'express';
+import express, { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { db, UPLOAD_DIR } from './db';
-import { hasSpace, newId, sha256, type DeviceRow } from './auth';
+import { hasSpace, newId, optionalDevice, type DeviceRow } from './auth';
+// Registre des fichiers envoyés : un fichier n'est rattachable que par qui l'a envoyé, et une seule fois.
+import { registerUpload, uploaderOf, forgetUpload, claimError, uniqueFileIndex } from './uploads';
+// Retire les métadonnées des images (EXIF) et, au mieux, des PDF (auteur, logiciel…).
+import { sanitize } from './sanitize';
 import { broadcast } from './events';
 import type { ArchiveItem, PublicAg, RegistryEntry } from '../shared/model';
 
@@ -67,6 +71,8 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS archive_date ON archive_items(date);
 `);
+// Un même fichier ne peut appartenir qu'à un seul document (garanti par la base elle-même).
+uniqueFileIndex('archive_file_unique', 'archive_items', 'file');
 
 /*
  * Forme exacte d'un nom de fichier stocké : 8 à 40 caractères sûrs + une extension autorisée.
@@ -125,8 +131,13 @@ function sniff(buf: Buffer): 'jpg' | 'png' | 'webp' | 'pdf' | 'txt' | null {
  * Le test FILE_RE empêche d'effacer autre chose qu'un fichier d'archive, même si le nom venait d'ailleurs.
  */
 const removeFile = (name: string | null) => {
-  if (name && FILE_RE.test(name)) fs.rm(path.join(ARCHIVE_DIR, name), { force: true }, () => {});
+  if (!name || !FILE_RE.test(name) || fileUsed(name)) return;
+  forgetUpload(name);
+  fs.rm(path.join(ARCHIVE_DIR, name), { force: true }, () => {});
 };
+
+/** Ce fichier est-il déjà rattaché à un document ? */
+const fileUsed = (name: string) => !!db.prepare('SELECT 1 FROM archive_items WHERE file = ?').get(name);
 
 /** Appareil connecté (facultatif) : pour les routes accessibles aussi sans compte. */
 /*
@@ -135,12 +146,7 @@ const removeFile = (name: string | null) => {
  * on le hache en SHA-256 (le serveur ne stocke que l'empreinte du jeton, jamais le jeton) et on cherche
  * l'appareil non révoqué correspondant. Sortie : l'appareil, ou undefined si visiteur anonyme.
  */
-function optionalDevice(req: Request): DeviceRow | undefined {
-  // Expression régulière : cherche « terrain_sid=<valeur> » dans l'en-tête Cookie, en début ou après un « ; ».
-  const sid = /(?:^|;\s*)terrain_sid=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
-  if (!sid) return undefined;
-  return db.prepare('SELECT * FROM devices WHERE token_hash = ? AND revoked_at IS NULL').get(sha256(decodeURIComponent(sid))) as DeviceRow | undefined;
-}
+// (optionalDevice vient désormais d'auth.ts : une seule lecture de cookie pour tout le serveur.)
 
 // Début de requête commun : chaque élément + le nom de l'appareil auteur (LEFT JOIN : null s'il a disparu).
 const SELECT = 'SELECT a.*, d.name AS creator_name FROM archive_items a LEFT JOIN devices d ON d.id = a.created_by';
@@ -165,17 +171,27 @@ function registry(): RegistryEntry[] {
    * Résultats d'un vote : un tableau de n compteurs (un par option), rempli à partir des bulletins
    * regroupés par choix. Le test « r.choice < n » ignore un éventuel numéro de choix hors limites.
    */
+  // Tous les décomptes en UNE requête (avant : une requête par vote). Clé : id du vote.
+  const tally = new Map<string, { choice: number; c: number }[]>();
+  for (const r of db.prepare(`SELECT b.vote_id, b.choice, COUNT(*) AS c FROM ballots b JOIN votes v ON v.id = b.vote_id
+    JOIN points p ON p.id = v.point_id WHERE p.space = ? AND v.status = 'closed' GROUP BY b.vote_id, b.choice`).all(SPACE) as { vote_id: string; choice: number; c: number }[]) {
+    tally.set(r.vote_id, [...(tally.get(r.vote_id) ?? []), r]);
+  }
   const countsOf = (id: string, n: number) => {
     const out = Array.from({ length: n }, () => 0);
-    for (const r of db.prepare('SELECT choice, COUNT(*) AS c FROM ballots WHERE vote_id = ? GROUP BY choice').all(id) as { choice: number; c: number }[]) if (r.choice < n) out[r.choice] = r.c;
+    for (const r of tally.get(id) ?? []) if (r.choice >= 0 && r.choice < n) out[r.choice] = r.c;
     return out;
+  };
+  // Options stockées en JSON : une valeur corrompue ne doit pas faire planter tout le registre.
+  const parseOptions = (s: string): string[] => {
+    try { const v = JSON.parse(s); return Array.isArray(v) ? v.map(String) : []; } catch { return []; }
   };
   // Les deux listes mises bout à bout (« ... » = décomposition), chacune convertie au format partagé.
   return [
     ...events.map((e): RegistryEntry => ({ kind: 'event', id: e.id, date: e.starts_at, end: e.ends_at, title: e.title, type: e.type })),
     ...votes.map((v): RegistryEntry => {
       // Les options sont stockées en texte JSON (ex. '["Pour","Contre"]').
-      const options = JSON.parse(v.options) as string[];
+      const options = parseOptions(v.options);
       return { kind: 'vote', id: v.id, date: v.closed_at, title: v.question, ag: v.ag, options, counts: countsOf(v.id, options.length) };
     }),
   ];
@@ -219,7 +235,9 @@ archive.post('/archive/files', requireMvt, express.raw({ type: () => true, limit
   // Nom généré par le serveur (aléatoire, imprévisible) : le nom d'origine n'est jamais utilisé sur le disque.
   const name = `${newId()}.${ext}`;
   // Écriture synchrone : simple, mais bloque le serveur le temps d'écrire (jusqu'à 15 Mo).
-  fs.writeFileSync(path.join(ARCHIVE_DIR, name), buf);
+  fs.writeFileSync(path.join(ARCHIVE_DIR, name), sanitize(buf, ext));
+  // On retient que CET appareil a envoyé ce fichier : lui seul pourra le rattacher à un document.
+  registerUpload(name, 'archive', req.device!.id);
   res.status(201).json({ file: name, fileType: ext });
 });
 
@@ -231,7 +249,8 @@ archive.post('/archive/files', requireMvt, express.raw({ type: () => true, limit
 const itemSchema = z.object({
   kind: z.enum(['document', 'image', 'mail', 'note']),
   title: z.string().trim().min(1, 'Donne un titre').max(120),
-  date: z.number().int().min(0),
+  // Date du document : pas avant 1900, pas plus d'un an dans le futur (fautes de frappe).
+  date: z.number().int().min(-2_208_988_800_000).max(Date.now() + 365 * 86400_000),
   body: z.string().trim().max(50_000).nullish(),
   file: z.string().regex(FILE_RE).nullish(),
   fileName: z.string().trim().max(160).nullish(),
@@ -249,7 +268,16 @@ archive.post('/archive', requireMvt, (req, res) => {
   // Un élément vide n'a pas de sens : il faut au moins un texte ou un fichier.
   if (!b.data.body && !b.data.file) return res.status(400).json({ error: 'Ajoute un fichier ou un texte.' });
   // Le fichier annoncé doit avoir réellement été reçu (1er temps) et ne pas avoir été nettoyé depuis.
-  if (b.data.file && !fs.existsSync(path.join(ARCHIVE_DIR, b.data.file))) return res.status(400).json({ error: 'Le fichier n\'a pas été reçu, réessaie.' });
+  if (b.data.file) {
+    // Le fichier doit exister, avoir été envoyé par CET appareil, et n'appartenir à aucun autre document.
+    // Avant, on pouvait reprendre le fichier d'un autre (et rendre public un document privé).
+    if (!fs.existsSync(path.join(ARCHIVE_DIR, b.data.file))) return res.status(400).json({ error: 'Le fichier n\'a pas été reçu, réessaie.' });
+    const err = claimError(b.data.file, 'archive', req.device!.id, fileUsed(b.data.file));
+    if (err) return res.status(400).json({ error: err });
+    // « Image » seulement pour une vraie image : le type annoncé doit correspondre au contenu.
+    const isImage = /\.(jpg|png|webp)$/.test(b.data.file);
+    if (b.data.kind === 'image' && !isImage) return res.status(400).json({ error: 'Ce fichier n\'est pas une image : choisis « Document ».' });
+  }
   const id = newId();
   const now = Date.now();
   // Type de fichier = extension du nom généré (fiable, puisque fixée par sniff()).
@@ -337,7 +365,12 @@ publicArchive.get('/archive/files/:name', (req, res) => {
   if (!FILE_RE.test(name)) return res.status(404).end();
   // Le fichier doit être rattaché à un élément d'archive (un fichier orphelin n'est jamais servi).
   const row = db.prepare('SELECT visibility, file_name FROM archive_items WHERE file = ?').get(name) as { visibility: string; file_name: string | null } | undefined;
-  if (!row) return res.status(404).end();
+  // Fichier pas encore rattaché à un document : seul l'appareil qui l'a envoyé peut le voir (aperçu).
+  if (!row) {
+    const d = optionalDevice(req);
+    if (!d || uploaderOf(name, 'archive') !== d.id) return res.status(404).end();
+    return res.set('Cache-Control', 'private, no-store').sendFile(path.join(ARCHIVE_DIR, name), (err) => { if (err && !res.headersSent) res.status(404).end(); });
+  }
   if (row.visibility !== 'public') {
     const d = optionalDevice(req);
     if (!d || !hasSpace(d, SPACE)) return res.status(404).end();
@@ -347,7 +380,10 @@ publicArchive.get('/archive/files/:name', (req, res) => {
   const image = ['jpg', 'png', 'webp'].includes(ext);
   // Nom proposé au téléchargement : on remplace tout caractère inhabituel par « _ » (notamment les
   // guillemets et retours à la ligne, qui casseraient l'en-tête HTTP), et on limite à 120 caractères.
-  const safeName = (row.file_name || `document.${ext}`).replace(/[^\w .()-]/g, '_').slice(0, 120);
+  // Nom de téléchargement : version ASCII de secours (accents retirés) pour les vieux navigateurs,
+  // et version complète encodée (filename*, norme RFC 5987) qui garde les accents.
+  const original = (row.file_name || `document.${ext}`).slice(0, 120);
+  const asciiName = original.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w .()-]/g, '_');
   /*
    * En-têtes de réponse :
    * - Content-Type : fixé par NOUS d'après l'extension sniffée (et nosniff, posé dans index.ts,
@@ -359,8 +395,11 @@ publicArchive.get('/archive/files/:name', (req, res) => {
    */
   res.set({
     'Content-Type': MIME[ext],
-    'Cache-Control': row.visibility === 'public' ? 'public, max-age=3600' : 'private, max-age=3600',
-    'Content-Disposition': `${image ? 'inline' : 'attachment'}; filename="${safeName}"`,
+    // no-cache : le navigateur (et tout cache intermédiaire) doit revérifier à chaque fois. Ainsi un
+    // document repassé en privé n'est plus servi depuis un cache. Pour un public, un cache partagé
+    // peut le garder mais doit lui aussi revérifier.
+    'Cache-Control': row.visibility === 'public' ? 'public, no-cache' : 'private, no-cache',
+    'Content-Disposition': `${image ? 'inline' : 'attachment'}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(original)}`,
     'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
   });
   // Envoi du fichier ; s'il a disparu du disque entre-temps, on répond 404 (si rien n'est encore parti).
@@ -380,6 +419,8 @@ export function cleanupArchive() {
   for (const f of fs.readdirSync(ARCHIVE_DIR)) {
     // On ne touche ni aux fichiers utilisés, ni à ce qui n'a pas la forme d'un fichier d'archive.
     if (used.has(f) || !FILE_RE.test(f)) continue;
-    if (now - fs.statSync(path.join(ARCHIVE_DIR, f)).mtimeMs > 24 * 3600_000) removeFile(f);
+    try {
+      if (now - fs.statSync(path.join(ARCHIVE_DIR, f)).mtimeMs > 24 * 3600_000) removeFile(f);
+    } catch { /* fichier disparu entre-temps */ }
   }
 }

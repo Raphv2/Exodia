@@ -16,15 +16,13 @@
 //
 // Notions : Leaflet (L) pour la petite carte publique, Intl.DateTimeFormat pour
 // écrire les dates en français, upload de fichier binaire (Blob) via api.ts.
-import L from 'leaflet';
 import { api, archiveFileUrl, compressImage, ApiError } from './api';
 import { store } from './store';
 import { openSheet, confirmSheet } from './sheet';
 import { chips, segmented } from './forms';
 import { resultBars } from './votes';
-import { addBasemap } from './basemap';
 import { h, icon, clear, toast, dateLong, dayLong, time, toDateInput, fromInputs } from './ui';
-import { ARCHIVE_KIND_LABEL, TYPES, type ArchiveItem, type PointType, type PublicAg, type RegistryEntry } from '../../shared/model';
+import { ARCHIVE_KIND_LABEL, TYPES, type ArchiveItem, type PointType, type RegistryEntry } from '../../shared/model';
 
 /*
  * Archive (côté Mouvement) : documents datés (photo, PDF, copie de mail, note), privés ou publics,
@@ -142,7 +140,8 @@ export function timeline(entries: Entry[], render: (e: Entry) => HTMLElement, em
   let month = '';
   // Tri du plus récent au plus ancien. Attention : sort() modifie le tableau
   // reçu lui-même (sans gravité ici, il est fabriqué juste avant l'appel).
-  for (const e of entries.sort((a, b) => b.date - a.date)) {
+  // [...entries] : on trie une COPIE (sort modifie le tableau sur place, celui de l'appelant aussi).
+  for (const e of [...entries].sort((a, b) => b.date - a.date)) {
     const m = monthOf(e.date);
     // Nouveau mois → on insère un titre « Novembre 2026 ».
     if (m !== month) { month = m; out.append(h('h3', { class: 'arch-month' }, m)); }
@@ -274,7 +273,9 @@ export function openArchiveForm(done: () => void) {
     if (st.kind === 'note' && !st.body.trim()) return toast('Écris la note.', 'err');
     if (st.kind === 'mail' && !st.body.trim() && !st.file) return toast('Colle le texte du mail ou ajoute le fichier.', 'err');
     if ((st.kind === 'image' || st.kind === 'document') && !st.file) return toast('Choisis un fichier.', 'err');
-    if (st.file && st.file.size > MAX_FILE) return toast('Fichier trop lourd (15 Mo maximum).', 'err');
+    // Limite de 15 Mo : pour un document, sur le fichier tel quel ; pour une photo, APRÈS compression
+    // (une photo de 20 Mo en fait souvent moins de 2 une fois ré-encodée, inutile de la refuser).
+    if (st.file && st.kind !== 'image' && st.file.size > MAX_FILE) return toast('Fichier trop lourd (15 Mo maximum).', 'err');
     submit.disabled = true;
     try {
       let file: string | null = null;
@@ -284,6 +285,7 @@ export function openArchiveForm(done: () => void) {
         // Les autres fichiers (PDF…) partent tels quels : leurs métadonnées ne sont
         // PAS nettoyées (d'où l'avertissement affiché pour les documents).
         const blob = st.kind === 'image' ? await compressImage(st.file, 2400, 0.85) : st.file;
+        if (blob.size > MAX_FILE) { toast('Fichier trop lourd (15 Mo maximum).', 'err'); submit.disabled = false; return; }
         file = (await api.uploadArchiveFile(blob)).file;
       }
       // Puis l'entrée d'archive elle-même.
@@ -311,75 +313,3 @@ export function openArchiveForm(done: () => void) {
 // ---------------------------------------------------------------------------
 // Page publique (sans compte) : AG annoncées et archive publique
 // ---------------------------------------------------------------------------
-
-// publicArchivePage() : page publique avec deux onglets, « AG annoncées » (liste
-// + petite carte) et « Archive » (documents publics).
-// NB : n'est importée par aucun fichier actuellement (voir l'en-tête).
-export function publicArchivePage(back: () => void): HTMLElement {
-  const root = h('div', { class: 'pub' });
-  let tab: 'ags' | 'archive' = 'ags';
-  // La carte Leaflet en cours, pour pouvoir la détruire avant d'en créer une autre.
-  let map: L.Map | null = null;
-
-  // renderAgs() : liste des AG publiques + carte.
-  const renderAgs = (ags: PublicAg[]) => {
-    const mapEl = h('div', { class: 'pub-map', 'aria-label': 'Carte des AG' });
-    const list = ags.length
-      ? h('ul', { class: 'pub-ags' }, ags.map((a) => h('li', { class: 'pub-ag' },
-          h('span', { class: 'arch-meta' }, `${dayLong(a.startsAt)} · ${time(a.startsAt)} – ${time(a.endsAt)}`),
-          h('strong', null, a.title),
-          a.description ? h('p', { class: 'arch-body' }, a.description) : null,
-          // Lien vers OpenStreetMap centré sur le lieu (mlat/mlon = marqueur).
-          h('a', { class: 'btn btn-small btn-light', href: `https://www.openstreetmap.org/?mlat=${a.lat}&mlon=${a.lng}#map=18/${a.lat}/${a.lng}`, target: '_blank', rel: 'noopener' }, icon('navigation', 14), 'Voir le lieu'))))
-      : h('div', { class: 'empty' }, icon('users', 36, 1.6), h('strong', null, 'Aucune AG annoncée pour l\'instant'));
-    // Leaflet a besoin que l'élément soit DANS la page (avec une taille) pour
-    // créer la carte : on attend 50 ms que le contenu soit inséré.
-    setTimeout(() => {
-      // On détruit l'ancienne carte éventuelle (sinon fuite mémoire).
-      map?.remove();
-      map = null;
-      if (!ags.length || !mapEl.isConnected) return;
-      map = L.map(mapEl, { zoomControl: true, attributionControl: true });
-      // void : on n'attend pas le chargement du fond de carte.
-      void addBasemap(map, 'mvt'); // AG annoncées : côté Mouvement
-      // Un rond rouge par AG, avec une bulle (popup) titre + date.
-      const pts = ags.map((a) => L.circleMarker([a.lat, a.lng], { radius: 10, color: '#fff', weight: 3, fillColor: '#a30006', fillOpacity: 1 })
-        // bindPopup reçoit du HTML : on retire < > & du titre pour éviter toute
-        // injection. (Les guillemets restent, sans danger dans ce contexte.)
-        .bindPopup(`<strong>${a.title.replace(/[<>&]/g, '')}</strong><br>${dayLong(a.startsAt)} · ${time(a.startsAt)}`).addTo(map!));
-      // On cadre la carte pour voir toutes les AG, avec 30 % de marge, sans trop zoomer.
-      map.fitBounds(L.featureGroup(pts).getBounds().pad(0.3), { maxZoom: 16 });
-    }, 50);
-    return h('div', { class: 'pub-section' }, ags.length ? mapEl : null, list);
-  };
-
-  // render() : affiche les onglets et « Chargement… », puis remplit le contenu
-  // quand le serveur a répondu.
-  const render = async () => {
-    const content = h('div', { class: 'pub-content' }, h('p', { class: 'splash-text' }, 'Chargement…'));
-    clear(root,
-      h('h1', { class: 'splash-title' }, 'Accès public'),
-      h('p', { class: 'splash-text' }, 'Sans compte, tu vois seulement les AG annoncées publiquement et l\'archive publique.'),
-      h('div', { class: 'pub-tabs' },
-        // Changer d'onglet relance render() (et donc une nouvelle requête).
-        h('button', { type: 'button', class: tab === 'ags' ? 'on' : '', onclick: () => { tab = 'ags'; void render(); } }, icon('users', 16), 'AG annoncées'),
-        h('button', { type: 'button', class: tab === 'archive' ? 'on' : '', onclick: () => { tab = 'archive'; void render(); } }, icon('archive', 16), 'Archive')),
-      content,
-      h('button', { class: 'link-btn pv-back', type: 'button', onclick: back }, 'Retour'),
-    );
-    try {
-      if (tab === 'ags') {
-        clear(content, renderAgs((await api.publicAgs()).ags));
-      } else {
-        const { items } = await api.publicArchive();
-        // Archive publique : documents seulement (pas de registre), jamais modifiables.
-        clear(content, timeline(items.map((item) => ({ date: item.date, item })), (e) => itemCard(e.item!, { editable: false }),
-          h('div', { class: 'empty' }, icon('archive', 36, 1.6), h('strong', null, 'L\'archive publique est vide pour l\'instant'))));
-      }
-    } catch (e) {
-      clear(content, h('p', { class: 'pv-error' }, icon('circle-alert', 18), (e as ApiError).message));
-    }
-  };
-  void render();
-  return root;
-}
