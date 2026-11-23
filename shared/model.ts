@@ -16,7 +16,7 @@ export type PointStatus = PanneauStatus | BlocageStatus;
  */
 export type Space = 'lfi' | 'mvt';
 export const SPACES: Space[] = ['lfi', 'mvt'];
-export const SPACE_LABEL: Record<Space, string> = { lfi: 'LFI', mvt: 'Mouvement' };
+export const SPACE_LABEL: Record<Space, string> = { lfi: 'Campagne', mvt: 'Mouvement' };
 
 export const TYPE_KEYS = [
   'panneau', 'collage', 'ag', 'tractage', 'rassemblement', 'blocus', 'blocage', 'materiel', 'local', 'autre', 'warning', 'danger', 'police',

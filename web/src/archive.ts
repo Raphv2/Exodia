@@ -4,6 +4,7 @@ import { store } from './store';
 import { openSheet, confirmSheet } from './sheet';
 import { chips, segmented } from './forms';
 import { resultBars } from './votes';
+import { addBasemap } from './basemap';
 import { h, icon, clear, toast, dateLong, dayLong, time, toDateInput, fromInputs } from './ui';
 import { ARCHIVE_KIND_LABEL, TYPES, type ArchiveItem, type PointType, type PublicAg, type RegistryEntry } from '../../shared/model';
 
@@ -235,7 +236,7 @@ export function publicArchivePage(back: () => void): HTMLElement {
       map = null;
       if (!ags.length || !mapEl.isConnected) return;
       map = L.map(mapEl, { zoomControl: true, attributionControl: true });
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+      void addBasemap(map, 'mvt'); // AG annoncées : côté Mouvement
       const pts = ags.map((a) => L.circleMarker([a.lat, a.lng], { radius: 10, color: '#fff', weight: 3, fillColor: '#a30006', fillOpacity: 1 })
         .bindPopup(`<strong>${a.title.replace(/[<>&]/g, '')}</strong><br>${dayLong(a.startsAt)} · ${time(a.startsAt)}`).addTo(map!));
       map.fitBounds(L.featureGroup(pts).getBounds().pad(0.3), { maxZoom: 16 });

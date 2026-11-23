@@ -201,7 +201,7 @@ function startApp() {
         SPACES.map((s) => h('button', {
           type: 'button', class: s === store.space ? 'on' : '', 'aria-pressed': String(s === store.space),
           onclick: () => store.switchSpace(s),
-        }, s === 'lfi' ? 'LFI' : 'Mvt'))) : null,
+        }, s === 'lfi' ? 'Campagne' : 'Mvt'))) : null,
       h('nav', { class: 'toptabs', 'aria-label': 'Sections' }, nav.filter((n) => n.view !== 'map').map((n) => navBtn(n, 'toptab'))),
       h('button', { class: 'settings-btn', type: 'button', onclick: openSettings, 'aria-label': 'Réglages', title: 'Réglages' }, icon('settings', 20)),
       h('button', { class: 'me-chip', type: 'button', onclick: () => store.setView('team'), title: 'Mon accès' },
@@ -397,7 +397,7 @@ function welcome() {
   const s = openSheet({
     title: `Salut ${store.me.name} !`,
     body: h('div', null,
-      store.me.spaces.length > 1 ? h('p', { class: 'muted' }, `Tu es dans l'espace ${SPACE_LABEL[store.space]}. Le bouton LFI / Mvt en haut permet de changer.`) : null,
+      store.me.spaces.length > 1 ? h('p', { class: 'muted' }, `Tu es dans l'espace ${SPACE_LABEL[store.space]}. Le bouton Campagne / Mvt en haut permet de changer.`) : null,
       h('ul', { class: 'tips' },
         mvt
           ? tip('plus', 'tip-add', 'Ajouter un point', 'Blocus, blocage, AG, rassemblement, dépôt de matériel… vise l\'endroit sur la carte, puis remplis la fiche.')

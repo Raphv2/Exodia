@@ -3,7 +3,7 @@
 Web app responsive (PC et mobile, installable sur l'écran d'accueil) pour organiser le terrain :
 
 - **Deux espaces vraiment séparés**, imposés par le serveur :
-  - **LFI** (style insoumis, violet et jaune) : panneaux électoraux, collage, tractage, trajet de collage ;
+  - **Campagne** (violet et jaune) : panneaux électoraux, collage, tractage, trajet de collage ;
   - **Mouvement** (style journal militant : noir, blanc, rouge sang) : blocus, blocages, police / CRS.
   - Le reste existe des deux côtés (AG, rassemblement, local, dépôt de matériel, flash, warning, danger), mais chaque point appartient à un seul espace. Le matériel et les alertes proposés sont propres à chaque espace, sans référence croisée.
   - Un appareil ne reçoit **jamais** les points, photos ou notifications d'un espace auquel il n'a pas accès. L'écran de connexion est neutre.
@@ -82,7 +82,7 @@ Le modèle retenu, c'est la **confiance de main en main, avec un appareil = une 
 2. Le jeton d'invitation est placé après le `#` du lien : il n'est jamais envoyé au serveur dans l'adresse, n'apparaît pas dans les journaux et n'est pas transmis aux autres sites. Le serveur ne stocke que son empreinte SHA-256.
 3. En acceptant l'invitation, l'appareil reçoit une **clé secrète de 256 bits**, rangée dans un cookie `HttpOnly` (illisible par les scripts), `SameSite=Strict` et `Secure` en HTTPS. Pas de mot de passe à retenir ni à se faire voler.
 4. **Traçabilité** : chaque appareil sait qui l'a fait entrer. Un admin peut retirer un appareil, et **toute la chaîne d'invitations qui en découle** en un clic (utile en cas d'infiltration). Le dernier admin ne peut pas être retiré.
-5. **Rôles** : *propriétaire* (le tout premier appareil : accès aux deux espaces, seul à nommer des admins et à leur donner un ou deux espaces, ne peut pas être retiré), *admin* (gère les relais et membres de ses espaces, modifie tous les points de ses espaces), *relais* (peut faire entrer une personne à la fois, en face à face, QR valable 1 h au plus, dans son espace), *membre* (ajoute des points et des alertes, modifie les siens). Chaque invitation fixe l'espace : LFI, Mouvement ou les deux.
+5. **Rôles** : *propriétaire* (le tout premier appareil : accès aux deux espaces, seul à nommer des admins et à leur donner un ou deux espaces, ne peut pas être retiré), *admin* (gère les relais et membres de ses espaces, modifie tous les points de ses espaces), *relais* (peut faire entrer une personne à la fois, en face à face, QR valable 1 h au plus, dans son espace), *membre* (ajoute des points et des alertes, modifie les siens). Chaque invitation fixe l'espace : Campagne, Mouvement ou les deux.
 6. Défenses supplémentaires : protection CSRF (en-tête obligatoire), limitation des tentatives d'invitation, politique de sécurité du contenu (CSP) stricte, photos servies uniquement aux appareils autorisés, photos ré-encodées dans le navigateur avant l'envoi (ce qui **supprime les données EXIF**, dont la position GPS), ménage automatique (alertes expirées, photos orphelines, invitations mortes).
 
 Bon réflexe : montrer le QR code **en direct** plutôt que d'envoyer le lien par message, puisqu'un lien peut être transféré.
@@ -97,6 +97,6 @@ web/src/  interface : carte, formulaires, agenda, trajet, équipe, styles
 
 ## Limites à connaître
 
-- Les fonds de carte viennent des serveurs d'OpenStreetMap, ce qui convient à un groupe militant. Pour un usage intensif, passe à un fournisseur de tuiles (MapTiler, Stadia…) en modifiant `web/src/map.ts`.
+- Le fond de carte est le style vectoriel « Positron » d'**OpenFreeMap** (gratuit, sans clé), recoloré aux couleurs de chaque espace et allégé (pas d'icônes ni de relief) dans `web/src/basemap.ts`. Il est dessiné par MapLibre, chargé seulement à l'ouverture de la carte. Sans WebGL ou si OpenFreeMap ne répond pas, l'app repasse automatiquement sur les tuiles OpenStreetMap classiques.
 - Le trajet est optimisé à vol d'oiseau (algorithme du plus proche voisin, puis 2-opt). L'itinéraire rue par rue est ensuite calculé par Google Maps ou par l'app de navigation.
 - Google Maps limite chaque lien à 9 étapes intermédiaires : au-delà, le trajet est découpé en plusieurs parties.

@@ -33,7 +33,10 @@ app.use((_req, res, next) => {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://tile.openstreetmap.org",
       "font-src 'self' data:",
-      "connect-src 'self'",
+      // Fond de carte vectoriel OpenFreeMap (tuiles, style, polices des noms de rues).
+      "connect-src 'self' https://tiles.openfreemap.org",
+      // MapLibre calcule la carte dans un « worker » servi par l'app elle-même.
+      "worker-src 'self' blob:",
       "frame-ancestors 'none'",
       "base-uri 'none'",
       "form-action 'self'",

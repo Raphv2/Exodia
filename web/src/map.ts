@@ -4,6 +4,7 @@ import { TYPES, iconOf, type Point } from '../../shared/model';
 import { isActive, occurrences, liveProblems } from '../../shared/time';
 import { h, icon, iconHtml, startOfDay, addDays, toast } from './ui';
 import { getPosition, type Pos } from './geo';
+import { addBasemap } from './basemap';
 
 let map: L.Map;
 const markers = L.layerGroup();
@@ -40,10 +41,8 @@ const VIEW_KEY = 'terrain:view';
 export function initMap(container: HTMLElement, onMarker: (p: Point) => void) {
   onPick = onMarker;
   map = L.map(container, { zoomControl: false, attributionControl: true, worldCopyJump: true, tapTolerance: 20 } as L.MapOptions);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
-  }).addTo(map);
+  // Fond épuré aux couleurs de l'espace (repli automatique sur OpenStreetMap si besoin).
+  void addBasemap(map, store.space);
   L.control.zoom({ position: 'topright' }).addTo(map);
   markers.addTo(map);
   routeLayer.addTo(map);
