@@ -3,7 +3,7 @@ import {
   Crosshair, Download, Footprints, House, ImagePlus, Layers, LocateFixed, LogOut, Map as MapIcon, MapPin,
   Navigation, Newspaper, Package, PaintRoller, Pencil, Plus, Presentation, QrCode, Repeat, Route, Share2,
   ShieldCheck, Siren, Smartphone, Trash2, TriangleAlert, UserPlus, Users, UsersRound, X, ArrowRight, Timer,
-  CircleCheck, ListChecks, Construction, Megaphone, CircleAlert, Flag, Sun, Flame, Swords, Skull, Ambulance, Ban, Shield, IdCard, Fence, Bus, FileX, EyeOff, Zap, Settings, Bell, Vote, type IconNode,
+  CircleCheck, ListChecks, Construction, Megaphone, CircleAlert, Flag, Sun, Flame, Swords, Skull, Ambulance, Ban, Shield, IdCard, Fence, Bus, FileX, EyeOff, Zap, Settings, Bell, Vote, Archive, FileText, Mail, Image as ImageIcon, StickyNote, Globe, Lock, Paperclip, type IconNode,
 } from 'lucide';
 
 /** Képi de police, dessiné dans le style des icônes lucide. */
@@ -27,6 +27,7 @@ const ICONS: Record<string, IconNode> = {
   construction: Construction, megaphone: Megaphone, 'circle-alert': CircleAlert, flag: Flag, sun: Sun, flame: Flame, police: Police,
   swords: Swords, skull: Skull, ambulance: Ambulance, ban: Ban, shield: Shield, 'id-card': IdCard, fence: Fence,
   bus: Bus, 'file-x': FileX, 'eye-off': EyeOff, zap: Zap, settings: Settings, bell: Bell, vote: Vote,
+  archive: Archive, 'file-text': FileText, mail: Mail, image: ImageIcon, 'sticky-note': StickyNote, globe: Globe, lock: Lock, paperclip: Paperclip,
 };
 
 export function icon(name: string, size = 20, stroke = 2.25): SVGElement {

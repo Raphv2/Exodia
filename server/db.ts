@@ -104,6 +104,7 @@ db.exec(`UPDATE devices SET owner = 1, spaces = 'lfi,mvt' WHERE id = (
   SELECT id FROM devices WHERE role = 'admin' AND revoked_at IS NULL ORDER BY created_at LIMIT 1
 ) AND NOT EXISTS (SELECT 1 FROM devices WHERE owner = 1 AND revoked_at IS NULL)`);
 db.exec('CREATE INDEX IF NOT EXISTS points_space ON points(space)');
+if (!cols('points').includes('public')) db.exec('ALTER TABLE points ADD COLUMN public INTEGER NOT NULL DEFAULT 0');
 if (!cols('points').includes('confirmed_at')) db.exec('ALTER TABLE points ADD COLUMN confirmed_at INTEGER');
 if (!cols('problems').includes('confirmed_at')) db.exec('ALTER TABLE problems ADD COLUMN confirmed_at INTEGER');
 if (!cols('points').includes('flash')) db.exec('ALTER TABLE points ADD COLUMN flash INTEGER NOT NULL DEFAULT 0');

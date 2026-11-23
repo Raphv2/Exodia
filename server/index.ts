@@ -5,6 +5,7 @@ import { csrf, ensureBootstrapAdmin, requireDevice } from './auth';
 import { access } from './routes-access';
 import { points, cleanup, releaseBlocages } from './routes-points';
 import { votes, publicVotes } from './routes-votes';
+import { archive, publicArchive, cleanupArchive } from './routes-archive';
 import { stream } from './events';
 
 const WEB_DIR = path.resolve('dist/web');
@@ -46,9 +47,12 @@ api.use(csrf);
 api.use(access);
 // Accès public (sans l'app) : uniquement le vote avec un code, sur place.
 api.use('/public', publicVotes);
+// Sans compte : l'archive publique et les AG annoncées publiquement (rien d'autre).
+api.use('/public', publicArchive);
 api.get('/stream', requireDevice, stream);
 api.use(requireDevice, points);
 api.use(requireDevice, votes);
+api.use(requireDevice, archive);
 api.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
   res.status((err as { status?: number }).status ?? 500).json({ error: 'Erreur serveur' });
@@ -63,7 +67,8 @@ if (hasBuild) {
 }
 
 cleanup();
-setInterval(cleanup, 3600_000).unref();
+cleanupArchive();
+setInterval(() => { cleanup(); cleanupArchive(); }, 3600_000).unref();
 setInterval(releaseBlocages, 60_000).unref();
 
 // HOST=127.0.0.1 en production : seul le reverse proxy (Caddy) peut joindre l'app.

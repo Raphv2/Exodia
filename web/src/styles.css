@@ -1120,3 +1120,47 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .pv-result .vote-bar-track { background: rgba(255,255,255,0.18); }
 .pv-result .vote-bar-fill { background: rgba(255,255,255,0.6); }
 .pv-result .vote-bar.top .vote-bar-fill { background: #fff; }
+
+/* ==========================================================================
+   Archive
+   ========================================================================== */
+.arch-timeline { display: flex; flex-direction: column; gap: 10px; }
+.arch-month { margin: 8px 0 0; font-family: var(--font-title); font-size: 20px; text-transform: uppercase; color: var(--ink-soft); border-bottom: 2px solid var(--line); padding-bottom: 4px; }
+.arch-card { background: #fff; border: 2px solid var(--line); border-radius: var(--r); padding: 12px; display: flex; flex-direction: column; gap: 8px; color: var(--ink); text-align: left; }
+.arch-reg { background: var(--violet-tint); border-style: dashed; }
+.arch-head { display: flex; align-items: flex-start; gap: 10px; }
+.arch-ico { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 50%; background: var(--ink); color: #fff; }
+.arch-ico .ico { color: inherit; }
+.arch-ico-vote { background: var(--violet); }
+.arch-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.arch-meta { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.arch-title { font-size: 16px; line-height: 1.25; }
+.arch-vis { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.arch-vis.public { background: #0B6E4F; color: #fff; }
+.arch-vis.private { background: var(--line); color: var(--ink-soft); }
+.arch-vis .ico { color: inherit; }
+.arch-img img { display: block; width: 100%; max-height: 320px; object-fit: cover; border-radius: var(--r); }
+.arch-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14.5px; color: var(--ink-soft); }
+.arch-body.clamped { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.arch-file { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 6px 10px; border: 2px solid var(--line); border-radius: var(--r); font-weight: 700; text-decoration: none; color: var(--ink); overflow-wrap: anywhere; }
+.arch-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.arch-actions .field-hint { flex: 1 1 100%; }
+.arch-pick { width: 100%; }
+
+/* Page publique */
+.splash-public { display: flex; flex-direction: column; gap: 10px; }
+.splash-wide .splash-inner { max-width: 640px; }
+.pub { display: flex; flex-direction: column; gap: 16px; }
+.pub-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pub-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border: 2px solid rgba(255,255,255,0.4); background: transparent; color: #fff; border-radius: 4px; font-weight: 800; }
+.pub-tabs button.on { background: #fff; color: #111316; border-color: #fff; }
+.pub-tabs button .ico { color: inherit; }
+.pub-content { display: flex; flex-direction: column; gap: 10px; }
+.pub-section { display: flex; flex-direction: column; gap: 10px; }
+.pub-map { height: 260px; border-radius: 6px; overflow: hidden; }
+.pub-ags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pub-ag { background: #fff; color: #111316; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.pub-ag .btn { align-self: flex-start; }
+.pub .empty { color: #fff; }
+.pub .empty .ico { color: rgba(255,255,255,0.7); }
+.pub .arch-month { color: rgba(255,255,255,0.8); border-color: rgba(255,255,255,0.2); }

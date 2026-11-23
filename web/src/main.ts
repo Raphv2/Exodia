@@ -24,6 +24,7 @@ import { mountRoute, toggleInRoute } from './route';
 import { mountTeam } from './team';
 import { openSheet } from './sheet';
 import { publicVotePage } from './votes';
+import { mountArchive, publicArchivePage } from './archive';
 import { h, icon, toast, isDesktop, time } from './ui';
 import { quietPosition, walkMinutes } from './geo';
 import { chips } from './forms';
@@ -36,6 +37,7 @@ const app = document.getElementById('app')!;
 async function boot() {
   // Page publique « J'ai un code de vote » : accessible sans compte.
   if (location.hash === '#/vote') return voteScreen();
+  if (location.hash === '#/public') return publicScreen();
   const join = location.hash.match(/^#\/join\/([A-Za-z0-9_-]{20,100})$/);
   let me = null;
   try {
@@ -75,9 +77,19 @@ function lockedScreen() {
       step('2', 'Tu le scannes avec ton téléphone'),
       step('3', 'Tu indiques ton prénom : c\'est parti'),
     ),
-    h('button', { class: 'btn btn-outline-light btn-block', type: 'button', onclick: () => { location.hash = '#/vote'; voteScreen(); } },
-      icon('vote', 20), 'J\'ai un code de vote'),
+    h('div', { class: 'splash-public' },
+      h('button', { class: 'btn btn-outline-light btn-block', type: 'button', onclick: () => { location.hash = '#/vote'; voteScreen(); } },
+        icon('vote', 20), 'J\'ai un code de vote'),
+      h('button', { class: 'btn btn-outline-light btn-block', type: 'button', onclick: () => { location.hash = '#/public'; publicScreen(); } },
+        icon('archive', 20), 'Archive publique et AG'),
+    ),
   );
+}
+
+/** Sans compte : AG annoncées publiquement et archive publique, rien d'autre. */
+function publicScreen() {
+  app.replaceChildren(h('div', { class: 'splash splash-wide' }, h('div', { class: 'splash-inner' }, brand(true),
+    publicArchivePage(() => { history.replaceState(null, '', location.pathname); location.reload(); }))));
 }
 
 /** Voter avec un code à 5 chiffres, sans compte (sur place uniquement). */
@@ -126,6 +138,7 @@ const NAV: { view: View; label: string; icon: string }[] = [
   { view: 'map', label: 'Carte', icon: 'map' },
   { view: 'agenda', label: 'Agenda', icon: 'calendar-days' },
   { view: 'route', label: 'Trajet', icon: 'route' },
+  { view: 'archive', label: 'Archive', icon: 'archive' },
   { view: 'team', label: 'Équipe', icon: 'users-round' },
 ];
 
@@ -133,8 +146,8 @@ function startApp() {
   setUnauthorizedHandler(() => location.reload());
   store.initSpace();
   const mvt = store.space === 'mvt';
-  // Le trajet de collage n'existe que côté LFI.
-  const nav = NAV.filter((n) => n.view !== 'route' || !mvt);
+  // Le trajet de collage n'existe que côté LFI, l'archive que côté Mouvement.
+  const nav = NAV.filter((n) => (n.view !== 'route' || !mvt) && (n.view !== 'archive' || mvt));
   const teamLabel = store.me.role === 'membre' ? 'Profil' : 'Équipe';
 
   const navBtn = (n: (typeof NAV)[number], cls: string) => h('button', {
@@ -144,6 +157,7 @@ function startApp() {
   const panels = {
     agenda: h('section', { class: 'panel-view', dataset: { view: 'agenda' } }),
     route: h('section', { class: 'panel-view', dataset: { view: 'route' } }),
+    archive: h('section', { class: 'panel-view', dataset: { view: 'archive' } }),
     team: h('section', { class: 'panel-view', dataset: { view: 'team' } }),
   };
 
@@ -192,7 +206,7 @@ function startApp() {
         h('span', { class: 'me-name' }, store.me.name)),
     ),
     h('main', { class: 'main' },
-      h('aside', { class: 'panel' }, h('div', { class: 'panel-grab' }, h('span')), panels.agenda, panels.route, panels.team),
+      h('aside', { class: 'panel' }, h('div', { class: 'panel-grab' }, h('span')), panels.agenda, panels.route, panels.archive, panels.team),
       h('div', { class: 'map-wrap' },
         mapEl,
         h('div', { class: 'map-filters', role: 'toolbar', 'aria-label': 'Filtres' },
@@ -222,6 +236,7 @@ function startApp() {
     setTimeout(() => { flyTo(o.point); openDetail(o.point); }, isDesktop() ? 0 : 280);
   });
   if (!mvt) mountRoute(panels.route);
+  if (mvt) mountArchive(panels.archive);
   mountTeam(panels.team);
 
   const applyView = () => {
@@ -298,6 +313,7 @@ function connectStream() {
   });
   // Votes : participation et résultats en direct.
   es.addEventListener('votes', () => store.emit('votes'));
+  es.addEventListener('archive', () => store.emit('archive'));
   es.addEventListener('revoked', () => location.reload());
 }
 

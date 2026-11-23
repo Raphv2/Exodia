@@ -220,6 +220,8 @@ export interface Point {
   material: string[];
   /** Flash : événement improvisé, qui commence dans les minutes qui viennent (notification à tout le monde). */
   flash: boolean;
+  /** AG côté Mouvement annoncée publiquement : visible sans compte. */
+  isPublic: boolean;
   /** Événement : qui a dit venir. */
   participants: Participant[];
   /** Événement : qui fournit quoi (clé = élément de `material`). Fournir n'oblige pas à venir. */
@@ -253,6 +255,8 @@ export interface PointInput {
   material?: string[];
   /** Flash : événement improvisé. */
   flash?: boolean;
+  /** AG côté Mouvement : l'annoncer publiquement (visible sans compte). */
+  isPublic?: boolean;
 }
 
 export interface Device {
@@ -310,6 +314,33 @@ export interface Vote {
   createdAt: number;
   closedAt: number | null;
 }
+/** Archive (côté Mouvement) : document daté, privé (membres) ou public (visible sans compte). */
+export interface ArchiveItem {
+  id: string;
+  kind: 'document' | 'image' | 'mail' | 'note';
+  title: string;
+  /** Date du document (pas la date d'ajout). */
+  date: number;
+  body: string | null;
+  file: string | null;
+  fileName: string | null;
+  fileType: string | null;
+  visibility: 'private' | 'public';
+  /** Masqués dans l'archive publique. */
+  createdBy: string | null;
+  creatorName: string | null;
+  createdAt: number;
+}
+export const ARCHIVE_KIND_LABEL: Record<ArchiveItem['kind'], string> = { document: 'Document', image: 'Image', mail: 'Copie de mail', note: 'Note' };
+
+/** Registre automatique : événements passés et votes clos (jamais les blocages ni les alertes). */
+export type RegistryEntry =
+  | { kind: 'event'; id: string; date: number; end: number; title: string; type: string }
+  | { kind: 'vote'; id: string; date: number; title: string; ag: string; options: string[]; counts: number[] };
+
+/** AG annoncée publiquement (vue sans compte). */
+export interface PublicAg { id: string; title: string; description: string | null; lat: number; lng: number; startsAt: number; endsAt: number }
+
 export interface VoteResult { id: string; status: 'open' | 'closed'; question: string; options: string[]; counts: number[] | null }
 
 export const colorOf = (p: Pick<Point, 'type' | 'color'>) => p.color ?? TYPES[p.type].color;

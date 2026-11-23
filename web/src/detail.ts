@@ -362,6 +362,7 @@ export function openDetail(p: Point) {
       h('span', { class: 'tag', style: { background: color, color: ink } }, icon(iconOf(p), 15), meta.label),
       p.mode === 'fixe' ? h('span', { class: 'tag tag-outline' }, 'Point fixe') : null,
       p.flash ? h('span', { class: 'tag tag-flash' }, icon('zap', 14), 'Flash') : null,
+      p.isPublic ? h('span', { class: 'tag tag-outline' }, icon('globe', 14), 'Annoncée publiquement') : null,
       p.recurrence !== 'none' ? h('span', { class: 'tag tag-outline' }, icon('repeat', 14), RECURRENCE_LABEL[p.recurrence]) : null,
     ),
     h('h3', { class: 'detail-title' }, p.title),

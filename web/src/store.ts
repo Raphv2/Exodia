@@ -2,7 +2,7 @@ import { api } from './api';
 import { TYPES, colorOf, type Device, type Point, type Space } from '../../shared/model';
 import { inkFor } from './ui';
 
-export type View = 'map' | 'agenda' | 'route' | 'team';
+export type View = 'map' | 'agenda' | 'route' | 'archive' | 'team';
 export type Group = 'fixe' | 'event' | 'flash' | 'alert';
 
 type Listener = () => void;

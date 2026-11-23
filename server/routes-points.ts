@@ -16,7 +16,7 @@ interface PointRow {
   id: string; mode: Point['mode']; type: Point['type']; title: string; description: string | null;
   lat: number; lng: number; color: string | null; photo: string | null;
   starts_at: number | null; ends_at: number | null; recurrence: Point['recurrence']; recurrence_until: number | null;
-  expires_at: number | null; status: Point['status']; status_at: number | null; parent_id: string | null; material: string | null; flash: number; confirmed_at: number | null; space: string; created_by: string; created_at: number; updated_at: number;
+  expires_at: number | null; status: Point['status']; status_at: number | null; parent_id: string | null; material: string | null; flash: number; confirmed_at: number | null; space: string; public: number; created_by: string; created_at: number; updated_at: number;
   creator_name?: string | null;
 }
 
@@ -46,7 +46,7 @@ const toDto = (r: PointRow, problems: Problem[] = [], pledges: Pledges = NO_PLED
   startsAt: r.starts_at, endsAt: r.ends_at, recurrence: r.recurrence, recurrenceUntil: r.recurrence_until,
   expiresAt: r.expires_at, status: r.status, createdBy: r.created_by, creatorName: r.creator_name ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at,
-  statusAt: r.status_at ?? null, parentId: r.parent_id ?? null, material: parseMaterial(r.material), flash: !!r.flash, confirmedAt: r.confirmed_at ?? null,
+  statusAt: r.status_at ?? null, parentId: r.parent_id ?? null, material: parseMaterial(r.material), flash: !!r.flash, isPublic: !!r.public, confirmedAt: r.confirmed_at ?? null,
   problems,
   participants: pledges.participants,
   providers: pledges.providers,
@@ -125,6 +125,7 @@ const inputSchema = z.object({
   material: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
   flash: z.boolean().optional(),
   space: z.enum(['lfi', 'mvt']).optional(),
+  isPublic: z.boolean().optional(),
 });
 
 /** L'état demandé est-il valable pour ce type de point ? */
@@ -154,6 +155,8 @@ function normalize(input: PointInput, existing?: PointRow, space: string = exist
     parent_id: null as string | null,
     material: null as string | null,
     flash: 0,
+    // Seule une AG côté Mouvement peut être annoncée publiquement.
+    public: input.type === 'ag' && space === 'mvt' && input.isPublic ? 1 : 0,
   };
 
   if (meta.alert) {
@@ -222,10 +225,10 @@ points.post('/points', (req, res) => {
     n.color = free === TYPES.blocus.color ? null : free;
   }
   db.prepare(`INSERT INTO points (id, mode, type, title, description, lat, lng, color, photo, starts_at, ends_at,
-              recurrence, recurrence_until, expires_at, status, status_at, parent_id, material, flash, space, created_by, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+              recurrence, recurrence_until, expires_at, status, status_at, parent_id, material, flash, space, public, created_by, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, n.mode, n.type, n.title, n.description, n.lat, n.lng, n.color, n.photo, n.starts_at, n.ends_at,
-      n.recurrence, n.recurrence_until, n.expires_at, n.status, n.status ? now : null, n.parent_id, n.material, n.flash, space, req.device!.id, now, now);
+      n.recurrence, n.recurrence_until, n.expires_at, n.status, n.status ? now : null, n.parent_id, n.material, n.flash, space, n.public, req.device!.id, now, now);
   broadcast('points', { id, by: req.device!.id, action: 'create', type: n.type, title: n.title, flash: !!n.flash, startsAt: n.starts_at }, space);
   res.status(201).json({ point: pointDto(id)! });
 });
@@ -242,9 +245,9 @@ points.put('/points/:id', (req, res) => {
   const now = Date.now();
   const statusAt = n.status === row.status ? row.status_at : n.status ? now : null;
   db.prepare(`UPDATE points SET mode=?, type=?, title=?, description=?, lat=?, lng=?, color=?, photo=?, starts_at=?, ends_at=?,
-              recurrence=?, recurrence_until=?, expires_at=?, status=?, status_at=?, parent_id=?, material=?, flash=?, updated_at=? WHERE id=?`)
+              recurrence=?, recurrence_until=?, expires_at=?, status=?, status_at=?, parent_id=?, material=?, flash=?, public=?, updated_at=? WHERE id=?`)
     .run(n.mode, n.type, n.title, n.description, n.lat, n.lng, n.color, n.photo, n.starts_at, n.ends_at,
-      n.recurrence, n.recurrence_until, n.expires_at, n.status, statusAt, n.parent_id, n.material, n.flash, now, row.id);
+      n.recurrence, n.recurrence_until, n.expires_at, n.status, statusAt, n.parent_id, n.material, n.flash, n.public, now, row.id);
   // Matériel retiré de la liste : les « je fournis » correspondants n'ont plus lieu d'être.
   const kept = new Set(parseMaterial(n.material));
   for (const r of db.prepare("SELECT DISTINCT item FROM pledges WHERE point_id = ? AND kind = 'fournit'").all(row.id) as { item: string }[]) {

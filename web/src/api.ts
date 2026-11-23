@@ -1,4 +1,4 @@
-import type { CreatedInvite, Device, Invite, Point, PointInput, Role, Space, Vote, VoteResult } from '../../shared/model';
+import type { CreatedInvite, Device, Invite, Point, PointInput, Role, Space, Vote, VoteResult, ArchiveItem, RegistryEntry, PublicAg } from '../../shared/model';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -39,6 +39,17 @@ export const api = {
   claim: (token: string, name: string) => req<{ device: Device }>('POST', '/auth/claim', { token, name }),
   logout: () => req('POST', '/auth/logout', {}),
 
+  // Archive (côté Mouvement)
+  archive: () => req<{ items: ArchiveItem[]; registry: RegistryEntry[] }>('GET', '/archive'),
+  uploadArchiveFile: (blob: Blob) => req<{ file: string; fileType: string }>('POST', '/archive/files', undefined, blob),
+  createArchive: (o: { kind: ArchiveItem['kind']; title: string; date: number; body?: string | null; file?: string | null; fileName?: string | null; visibility: ArchiveItem['visibility'] }) =>
+    req<{ item: ArchiveItem }>('POST', '/archive', o),
+  updateArchive: (id: string, o: { visibility?: ArchiveItem['visibility']; title?: string }) => req<{ item: ArchiveItem }>('PATCH', `/archive/${id}`, o),
+  deleteArchive: (id: string) => req('DELETE', `/archive/${id}`),
+  // Sans compte : archive publique et AG annoncées
+  publicArchive: () => req<{ items: ArchiveItem[] }>('GET', '/public/archive'),
+  publicAgs: () => req<{ ags: PublicAg[] }>('GET', '/public/ags'),
+
   // Votes en AG
   votes: (pointId: string) => req<{ votes: Vote[]; canRun: boolean }>('GET', `/points/${pointId}/votes`),
   createVote: (pointId: string, question: string, options: string[]) => req<{ vote: Vote }>('POST', `/points/${pointId}/votes`, { question, options }),
@@ -76,6 +87,8 @@ export const api = {
 };
 
 export const photoUrl = (name: string) => `/api/photos/${encodeURIComponent(name)}`;
+/** Fichier d'archive (public pour tous, privé seulement pour le côté Mouvement : le serveur vérifie). */
+export const archiveFileUrl = (name: string) => `/api/public/archive/files/${encodeURIComponent(name)}`;
 
 /** Redimensionne et ré-encode en JPEG (retire aussi les données EXIF, dont la position GPS). */
 export async function compressImage(file: File, max = 1600, quality = 0.82): Promise<Blob> {

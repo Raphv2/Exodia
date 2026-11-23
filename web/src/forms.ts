@@ -151,6 +151,8 @@ interface Draft {
   parentId: string | null;
   /** Événement : matériel à prévoir. */
   material: string[];
+  /** AG côté Mouvement annoncée publiquement (visible sans compte). */
+  isPublic: boolean;
   /** Flash : événement improvisé (commence dans `flashIn` min, dure `flashDur` min). */
   flash: boolean;
   flashIn: number;
@@ -204,6 +206,7 @@ function draftFrom(p: Point | null, pos: Pos, formMode: FormMode = 'fixe', prese
     status: p?.status ?? 'a_coller',
     parentId: p ? p.parentId : preset.parentId !== undefined ? preset.parentId : activeBlocus()[0]?.id ?? null,
     material: [...(p?.material ?? [])],
+    isPublic: p?.isPublic ?? false,
     flash: p ? p.flash : formMode === 'flash',
     flashIn: 15,
     flashDur: 60,
@@ -321,6 +324,12 @@ function openPointForm(d: Draft) {
       d.mode === 'event' ? h('div', { class: 'field' },
         h('span', { class: 'field-label' }, 'Matériel nécessaire', h('em', null, ' · facultatif')),
         materialPicker(d, color)) : null,
+      // AG côté Mouvement : l'annoncer publiquement (décoché par défaut, pour qu'une AG interne ne fuie pas).
+      d.mode === 'event' && d.type === 'ag' && store.space === 'mvt' ? h('div', { class: 'field' },
+        h('label', { class: 'toggle-line' },
+          h('input', { type: 'checkbox', checked: d.isPublic, onchange: (e: Event) => (d.isPublic = (e.target as HTMLInputElement).checked) }),
+          h('span', { class: 'switch' }), 'Annoncer publiquement'),
+        h('span', { class: 'field-hint' }, 'Visible sans compte (titre, lieu, horaire, description), depuis « Archive publique » sur la page d\'accueil.')) : null,
       status,
       blocus,
       group('Photo', photoPicker(d.photo, () => {})),
@@ -345,6 +354,7 @@ function openPointForm(d: Draft) {
       lat: d.lat, lng: d.lng, color: d.color, status: STATUSES[d.type] ? d.status : null,
       parentId: d.type === 'blocage' ? d.parentId : null,
       material: d.mode === 'event' ? d.material : [],
+      isPublic: d.type === 'ag' && store.space === 'mvt' && d.isPublic,
       flash: d.mode === 'event' && d.flash,
     };
     if (d.mode === 'event' && d.flash && !isEdit) {
