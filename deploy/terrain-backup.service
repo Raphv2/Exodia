@@ -1,13 +1,23 @@
+# Sauvegarde ponctuelle de Terrain (base SQLite + photos). Lancée chaque nuit par
+# terrain-backup.timer, et par update.sh juste avant chaque mise à jour.
+# À la main : systemctl start terrain-backup
 [Unit]
 Description=Sauvegarde de Terrain (base + photos)
 
 [Service]
+# oneshot : la commande s'exécute puis se termine (ce n'est pas un service permanent) ;
+# « systemctl start » attend la fin de la sauvegarde avant de rendre la main.
 Type=oneshot
+# Même compte que l'app, pour pouvoir lire ses données.
 User=terrain
 Group=terrain
 WorkingDirectory=/opt/terrain
 Environment=DATA_DIR=/var/lib/terrain
+# server/backup.ts : copie cohérente de la base (VACUUM INTO) et des photos dans
+# /var/backups/terrain ; le dernier argument (14) = nombre de jours de sauvegardes gardées.
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning --import tsx server/backup.ts /var/backups/terrain 14
+# Durcissement (plus léger que celui du service principal) : lecture seule partout,
+# sauf les données et le dossier des sauvegardes.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

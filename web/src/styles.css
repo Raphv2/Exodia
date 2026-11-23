@@ -1,61 +1,120 @@
+/* PLAN DU FICHIER styles.css : une seule feuille de styles pour toute l'interface.
+   Elle est importée par web/src/main.ts ; Vite l'intègre à la page compilée.
+    1. Variables (:root) : couleurs, polices, arrondis, ombres, hauteurs des barres.
+    2. Base : remise à zéro (box-sizing, marges), typographie, accessibilité.
+    3. Boutons et petits utilitaires de disposition (.row-..., .grid-...).
+    4. Marque (logo) et écrans d'accueil « splash » (invitation, appareil verrouillé).
+    5. Coque de l'app : grille barre du haut / zone principale / barre du bas.
+    6. Carte Leaflet : filtres, boutons flottants, épingles, viseur de placement.
+    7. Fenêtres « sheets » (montent du bas de l'écran) et formulaires.
+    8. Fiche d'un point, Agenda, Trajet, Équipe, Accueil, notifications (toasts).
+    9. Animations, et respect du réglage « réduire les animations ».
+   10. Media queries : mobile (< 900px), très petits écrans, ordinateur (>= 900px).
+   11. Ajouts par fonctionnalité : problèmes, blocus, police, matériel, engagements,
+       flash, filtres, notifications, réglages, espaces de chaque appareil.
+   12. Écrans d'accès neutres, puis THÈME MOUVEMENT (:root[data-space='mvt']).
+   13. Votes (façon Kahoot), Archive, Chat chiffré, correctifs iPhone,
+       page d'accueil publique, bandeau des votes.
+
+   Deux règles pour bien lire ce fichier :
+   - Spécificité : un #id pèse plus qu'une .classe ou un [attribut], qui pèsent plus
+     qu'une balise. À poids égal, la DERNIÈRE règle écrite gagne. Le fichier ayant grandi
+     par ajouts successifs, des règles de la fin corrigent parfois celles du début.
+   - « !important » passe devant tout, y compris les styles écrits en ligne (style="...")
+     par le JavaScript. À réserver aux cas où rien d'autre ne marche. */
 /* ==========================================================================
    Terrain — inspiré de l'identité visuelle insoumise :
    violet franc, encre bleu nuit, jaune vif, titres condensés en capitales.
    ========================================================================== */
 
+/* 1. VARIABLES CSS (« propriétés personnalisées »). Déclarées sur :root (= la balise <html>),
+   elles sont héritées par tous les éléments et se lisent avec var(--nom).
+   Intérêt : changer une valeur ici la change partout. Le thème Mouvement (plus bas) redéfinit
+   ces MÊMES noms, et tout le site change de couleurs sans réécrire une seule règle.
+   Attention : les noms « --violet... » sont historiques ; en Mouvement ils valent rouge et noir. */
 :root {
+  /* Couleur principale (barre du haut, boutons) et ses versions plus sombres. */
   --violet: #7b13d6;
   --violet-dark: #5c0ea3;
   --violet-deep: #3a0870;
+  /* Fonds très clairs teintés de violet (boutons légers, cartes dans les fenêtres). */
   --violet-soft: #f1e9fb;
   --violet-tint: #f7f3fc;
+  /* « Encre » = couleur du texte (bleu nuit presque noir), puis texte secondaire et gris discret. */
   --ink: #00232c;
   --ink-soft: #3c5158;
   --muted: #687a80;
+  /* Couleur des traits de séparation et des bordures. */
   --line: #e4dcef;
+  /* Couleurs d'état : jaune (focus, surligneur), rouge (danger), vert (fait), orange. */
   --yellow: #ffec00;
   --red: #f53b3b;
   --green: #00a86b;
   --orange: #ff7a00;
+  /* Fond de la page et fond des panneaux. */
   --bg: #ffffff;
   --panel: #faf8fd;
 
+  /* Polices : le navigateur prend la première disponible, les suivantes sont des replis.
+     Les fichiers de police sont embarqués via les paquets @fontsource importés dans main.ts. */
   --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-title: 'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
 
+  /* Rayons des coins arrondis (petit / grand) et ombres portées réutilisées partout. */
   --r: 4px;
   --r-lg: 10px;
   --shadow: 0 10px 30px rgba(43, 8, 90, 0.18);
   --shadow-sm: 0 2px 8px rgba(0, 35, 44, 0.16);
+  /* Hauteurs fixes de la barre du haut et de la barre de navigation du bas. */
   --topbar: 60px;
   --bottomnav: 66px;
+  /* env(safe-area-inset-...) : espace réservé par l'iPhone sous l'encoche (haut) et pour la
+     barre d'accueil (bas). Non nul seulement grâce à viewport-fit=cover dans index.html ;
+     0px est la valeur de repli sur les autres appareils. */
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
 }
 
+/* 2. BASE. box-sizing: border-box : la largeur d'un élément INCLUT sa bordure et son padding
+   (sinon width: 100% + padding déborde). Appliqué aussi aux pseudo-éléments ::before / ::after. */
 *, *::before, *::after { box-sizing: border-box; }
+/* html et body occupent toute la hauteur de l'écran, sans la marge par défaut du navigateur. */
 html, body { height: 100%; margin: 0; }
+/* Typographie générale de toute la page. */
 body {
   font-family: var(--font);
   font-size: 15px;
   line-height: 1.45;
   color: var(--ink);
   background: var(--bg);
+  /* Lissage des polices sur Mac / iPhone. text-size-adjust : empêche l'iPhone de grossir le
+     texte tout seul en paysage. overscroll-behavior: none : pas d'effet « élastique » ni de
+     « tirer pour rafraîchir » quand on fait défiler au-delà du bord. */
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   overscroll-behavior: none;
 }
+/* Les champs de formulaire n'héritent pas la police par défaut : on la leur impose (inherit). */
 button, input, textarea, select { font: inherit; color: inherit; }
+/* Main au survol des boutons ; suppression du flash gris au toucher sur mobile. */
 button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 a { color: var(--violet); }
+/* .sr-only : texte invisible à l'écran mais lu par les lecteurs d'écran (accessibilité).
+   Technique classique : 1 px de côté et contenu rogné par clip. */
 .sr-only { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* :focus-visible : contour jaune épais uniquement quand on navigue au clavier (pas au clic). */
 :focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+/* .ico = les icônes SVG (Lucide). flex: none : elles ne rétrécissent jamais dans un flex. */
 .ico { flex: none; }
+/* Trait de séparation horizontal <hr>. */
 hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 
 /* ---------- Boutons ---------- */
 
+/* 3. .btn : bouton de base. inline-flex aligne icône + texte au centre, séparés par gap.
+   min-height 46px : cible confortable pour le doigt. Bordure transparente de 2px : les
+   variantes « outline » la colorent sans que la taille du bouton change. */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: 46px; padding: 0 18px;
@@ -65,8 +124,12 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
   text-decoration: none; white-space: nowrap; user-select: none;
   transition: background 0.15s, transform 0.1s, box-shadow 0.15s, opacity 0.15s;
 }
+/* Effet d'enfoncement au clic ; bouton désactivé pâli (redéfini plus bas, voir « Toujours là »). */
 .btn:active { transform: translateY(1px) scale(0.99); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Variantes de couleur : -primary (action principale), -yellow, -outline (contour), -light,
+   -ghost (transparent), -danger (rouge), -warning (orange), -done (vert).
+   color-mix(in srgb, A 14%, B) mélange deux couleurs en CSS : ici 14 % de violet dans du blanc. */
 .btn-primary { background: var(--violet); color: #fff; }
 .btn-primary:hover { background: var(--violet-dark); }
 .btn-yellow { background: var(--yellow); color: var(--ink); }
@@ -82,45 +145,65 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 .btn-warning:hover { background: #ffb700; }
 .btn-done { background: var(--green); color: #fff; }
 .btn-text-danger { color: #c41d1d; }
+/* Tailles : petit, grand, pleine largeur. */
 .btn-small { min-height: 34px; padding: 0 12px; font-size: 15px; gap: 6px; }
 .btn-big { min-height: 56px; font-size: 21px; }
 .btn-block { width: 100%; }
+/* Bouton en cours d'action : non cliquable (pointer-events: none) et icône qui tourne. */
 .btn.loading { pointer-events: none; opacity: 0.8; }
 .btn.loading .ico { animation: spin 0.8s linear infinite; }
 
+/* Bouton rond qui ne contient qu'une icône. inline-grid + place-items: center centre
+   le contenu horizontalement ET verticalement en une seule ligne. */
 .icon-btn {
   display: inline-grid; place-items: center; width: 42px; height: 42px; flex: none;
   border: 0; border-radius: 50%; background: transparent; color: var(--ink);
 }
 .icon-btn:hover { background: var(--violet-soft); }
 .icon-btn.small { width: 34px; height: 34px; color: var(--muted); }
+/* Boutons qui ressemblent à des liens (texte violet, sans fond ni bordure). */
 .link-btn, .link-like { border: 0; background: none; padding: 0; color: var(--violet); font-weight: 600; text-align: left; }
 .link-btn { text-decoration: underline; text-underline-offset: 3px; }
 
+/* Utilitaires de disposition : rangée alignée à droite, rangée espacée, grille de
+   2 colonnes égales (1fr = une part de l'espace libre), grille de 3 colonnes (la 1re plus large). */
 .row-end { display: flex; justify-content: flex-end; gap: 10px; }
 .row-gap { display: flex; gap: 8px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid-3 { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 10px; }
+/* Texte gris secondaire ; texte centré. */
 .muted { color: var(--muted); margin: 0; }
 .center { text-align: center; }
 
 /* ---------- Marque ---------- */
 
+/* 4. Logo + nom de l'app. min-width: 0 autorise le bloc à rétrécir dans un flex (par défaut
+   un élément flex ne descend pas sous la largeur de son texte et pousse les voisins hors écran). */
 .brand { display: flex; align-items: center; gap: 10px; color: #fff; min-width: 0; }
+/* Le carré jaune du logo, légèrement penché (rotate) façon autocollant. */
 .brand-mark {
   display: grid; place-items: center; width: 36px; height: 36px; flex: none;
   background: var(--yellow); color: var(--violet); border-radius: var(--r);
   transform: rotate(-4deg);
 }
+/* Nom en grand (police de titre condensée), sous-titre en petites capitales espacées. */
 .brand-text { display: flex; flex-direction: column; line-height: 0.9; }
 .brand-text strong { font-family: var(--font-title); font-weight: 800; font-size: 27px; text-transform: uppercase; letter-spacing: 0.01em; }
 .brand-text small { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; opacity: 0.85; margin-top: 3px; }
+/* .brand-big : version agrandie du logo sur les écrans d'accueil. */
 .brand-big .brand-mark { width: 58px; height: 58px; }
 .brand-big .brand-text strong { font-size: 44px; }
 .brand-big .brand-text small { font-size: 13px; }
 
 /* ---------- Écrans d'accueil (invitation / verrouillé) ---------- */
 
+/* Écran plein (invitation, appareil verrouillé). 100dvh = hauteur VISIBLE de l'écran
+   (« dynamic viewport height ») : contrairement à 100vh, elle tient compte des barres du
+   navigateur mobile qui apparaissent et disparaissent. grid + place-items centre le contenu.
+   Le padding ajoute les zones de sécurité de l'iPhone (encoche en haut, barre en bas).
+   Fond : trois couches superposées (la première écrite est au-dessus) : rayures fines,
+   halo clair en haut à gauche, dégradé violet. NB : ce fond est remplacé plus bas par
+   une version grise neutre (section « Écrans d'accès »). */
 .splash {
   min-height: 100dvh; display: grid; place-items: center;
   padding: calc(32px + var(--safe-t)) 20px calc(32px + var(--safe-b));
@@ -130,26 +213,38 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
     radial-gradient(120% 80% at 0% 0%, #9433ec 0%, transparent 60%),
     linear-gradient(160deg, var(--violet) 0%, var(--violet-deep) 100%);
 }
+/* Colonne centrale de 440px maximum. clamp(min, idéal, max) : la taille du titre suit la
+   largeur de l'écran (11vw = 11 % de la largeur) sans descendre sous 40px ni dépasser 58px. */
 .splash-inner { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 22px; }
 .splash-title {
   margin: 12px 0 0; font-family: var(--font-title); font-weight: 800; text-transform: uppercase;
   font-size: clamp(40px, 11vw, 58px); line-height: 0.95; letter-spacing: 0.005em;
 }
+/* Textes secondaires de l'écran d'accueil. */
 .splash-text { margin: 0; font-size: 17px; opacity: 0.95; }
 .splash-fine { margin: 0; font-size: 13px; opacity: 0.75; }
+/* Étapes numérotées « 1, 2, 3 » avec un liseré coloré à gauche. */
 .splash-steps { display: grid; gap: 10px; }
 .splash-step { display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,0.1); border-left: 4px solid var(--yellow); padding: 12px 14px; }
 .splash-step span { font-family: var(--font-title); font-weight: 800; font-size: 30px; color: var(--yellow); line-height: 1; width: 18px; }
 .splash-step p { margin: 0; font-weight: 600; }
+/* Formulaire d'invitation. Les !important de .input-big lui permettent de passer devant
+   .input, définie plus loin dans le fichier avec le même poids (elle gagnerait sinon). */
 .join-form { display: grid; gap: 12px; }
 .input-big { font-size: 19px !important; padding: 16px !important; border: 0 !important; }
 
 /* ---------- Coque de l'app ---------- */
 
+/* 5. COQUE DE L'APP. Grille de 3 rangées : barre du haut (auto = sa hauteur naturelle),
+   zone principale (1fr = tout le reste), barre du bas (auto). overflow: hidden : la page
+   elle-même ne défile jamais ; seuls les panneaux internes défilent. */
 .app {
   display: grid; grid-template-rows: auto 1fr auto;
   height: 100dvh; overflow: hidden;
 }
+/* Barre du haut. Sa hauteur inclut la zone de l'encoche (--safe-t) et le padding-top pousse
+   son contenu en dessous. position: relative + z-index: 20 la placent au-dessus de la carte
+   (z-index n'a d'effet que sur un élément positionné). Ombre « 0 2px 0 » sans flou = liseré. */
 .topbar {
   display: flex; align-items: center; gap: 16px;
   min-height: calc(var(--topbar) + var(--safe-t)); padding: var(--safe-t) 14px 0;
@@ -157,14 +252,19 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
   position: relative; z-index: 20;
   box-shadow: 0 2px 0 var(--violet-deep);
 }
+/* Onglets du haut : cachés sur mobile, affichés sur ordinateur (voir @media min-width: 900px). */
 .toptabs { display: none; }
+/* Pastille « moi » (avatar + pseudo). margin-left: auto la pousse tout à droite du flex.
+   max-width: 45vw : jamais plus de 45 % de la largeur de l'écran. */
 .me-chip {
   margin-left: auto; display: flex; align-items: center; gap: 8px;
   border: 0; border-radius: 999px; padding: 4px 12px 4px 4px;
   background: rgba(255,255,255,0.14); color: #fff; font-weight: 600; max-width: 45vw;
 }
 .me-chip:hover { background: rgba(255,255,255,0.24); }
+/* Pseudo tronqué avec « … » s'il est trop long (ces trois propriétés vont toujours ensemble). */
 .me-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Avatar rond avec l'initiale ; variantes .small et .tiny. */
 .avatar {
   display: grid; place-items: center; flex: none; width: 46px; height: 46px; border-radius: 50%;
   background: var(--violet); color: #fff; font-family: var(--font-title); font-weight: 800; font-size: 24px;
@@ -172,43 +272,72 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 .avatar.small { width: 38px; height: 38px; font-size: 20px; }
 .avatar.tiny { width: 30px; height: 30px; font-size: 17px; background: var(--yellow); color: var(--violet-deep); }
 
+/* Zone principale. min-height: 0 est indispensable : par défaut, un enfant de grille ne peut
+   pas être plus petit que son contenu, et la carte ou le panneau déborderaient de l'écran.
+   Une seule colonne sur mobile : carte et panneau sont placés dans la MÊME case
+   (grid-area: 1 / 1 = rangée 1, colonne 1), le panneau recouvre donc la carte. */
 .main { position: relative; min-height: 0; display: grid; grid-template-columns: 1fr; }
+/* Conteneur de la carte. isolation: isolate crée un « contexte d'empilement » : les z-index
+   internes de Leaflet (400, 600, 1000...) restent enfermés dedans et ne peuvent pas passer
+   devant les fenêtres ou la barre du haut. */
 .map-wrap { position: relative; z-index: 0; isolation: isolate; grid-area: 1 / 1; min-height: 0; }
+/* #map remplit son conteneur (inset: 0 = top, right, bottom, left à 0) ; fond lilas en
+   attendant le chargement des tuiles. */
 #map { position: absolute; inset: 0; background: #e9e4ef; }
+/* Tuiles en images (OpenStreetMap) un peu désaturées pour que les épingles ressortent.
+   .has-vector est ajoutée par basemap.ts quand le fond vectoriel MapLibre est utilisé. */
 .leaflet-tile-pane { filter: saturate(0.7) contrast(0.96) brightness(1.03); }
 /* Fond vectoriel : couleurs déjà choisies, pas de filtre. */
 .has-vector .leaflet-tile-pane { filter: none; }
 
+/* Panneau (Agenda, Trajet, Équipe...). Même case de grille que la carte, z-index 5 pour
+   passer devant. Il défile verticalement ; overscroll-behavior: contain empêche le
+   défilement de « fuir » vers la page en bout de liste. Caché par défaut. */
 .panel {
   grid-area: 1 / 1; position: relative; z-index: 5;
   background: var(--panel); overflow-y: auto; overscroll-behavior: contain;
   display: none;
 }
+/* Poignée du demi-panneau Trajet (affichée seulement sur mobile, voir plus bas). */
 .panel-grab { display: none; }
+/* Chaque vue du panneau est cachée, sauf celle qui porte la classe .on (posée par main.ts). */
 .panel-view { display: none; padding: 18px 16px 28px; flex-direction: column; gap: 16px; }
 .panel-view.on { display: flex; }
+/* main.ts écrit data-panel="map", "agenda", "route"... sur .app. Si ce n'est PAS la carte,
+   on montre le panneau. :not(...) = « qui ne correspond pas à ». */
 .app:not([data-panel='map']) .panel { display: block; }
 
+/* En-tête de panneau : titre à gauche, actions à droite (space-between), retour à la ligne si besoin. */
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+/* Grand titre de panneau façon « surligneur jaune » : un dégradé à paliers nets
+   (transparent jusqu'à 60 %, jaune de 60 à 92 %) dessine une bande derrière le bas du texte. */
 .panel-title {
   margin: 0; font-family: var(--font-title); font-weight: 800; text-transform: uppercase;
   font-size: 36px; line-height: 1; color: var(--violet-deep);
   background: linear-gradient(transparent 60%, var(--yellow) 60%, var(--yellow) 92%, transparent 92%);
   padding: 0 4px; margin-left: -4px;
 }
+/* Phrase d'introduction ; marge négative pour la rapprocher du titre. */
 .panel-intro { margin: -4px 0 0; color: var(--ink-soft); }
 
 /* Barre de navigation du bas (mobile) */
+/* grid-auto-flow: column : chaque bouton ouvre une nouvelle colonne ; minmax(0, 1fr) :
+   colonnes égales, autorisées à rétrécir sous la largeur de leur texte.
+   Hauteur et padding-bottom ajoutent la zone de la barre d'accueil de l'iPhone. */
 .bottomnav {
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
   min-height: calc(var(--bottomnav) + var(--safe-b)); padding-bottom: var(--safe-b);
   background: #fff; border-top: 1px solid var(--line); position: relative; z-index: 20;
 }
+/* Un bouton de la barre du bas : icône au-dessus du texte (flex-direction: column). */
 .navbtn {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   border: 0; background: none; color: var(--muted); position: relative;
   font-family: var(--font-title); font-weight: 700; font-size: 14.5px; text-transform: uppercase; letter-spacing: 0.04em;
 }
+/* Petit trait violet en haut du bouton actif. ::before crée un élément décoratif sans HTML ;
+   position: absolute le place par rapport au bouton (lui-même en position: relative).
+   scaleX(0) l'aplatit (invisible), scaleX(1) sur .on le déploie, avec une transition. */
 .navbtn::before {
   content: ''; position: absolute; top: 0; left: 26%; right: 26%; height: 4px; border-radius: 0 0 4px 4px;
   background: var(--violet); transform: scaleX(0); transition: transform 0.2s;
@@ -218,11 +347,17 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 
 /* ---------- Carte ---------- */
 
+/* 6. CARTE. Barre de filtres posée sur la carte (absolute dans .map-wrap). right: 62px laisse
+   la place au bouton « me localiser ». z-index 600 : au-dessus des calques de Leaflet.
+   Elle défile horizontalement (overflow-x: auto), barre de défilement masquée
+   (scrollbar-width pour Firefox, ::-webkit-scrollbar pour Chrome et Safari). */
 .map-filters {
   position: absolute; top: 10px; left: 10px; right: 62px; z-index: 600;
   display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px;
 }
 .map-filters::-webkit-scrollbar { display: none; }
+/* Pastille de filtre. Inactive : semi-transparente et barrée. backdrop-filter floute la carte
+   DERRIÈRE la pastille (effet verre dépoli ; préfixe -webkit- pour Safari). */
 .fchip {
   display: inline-flex; align-items: center; gap: 7px; flex: none;
   height: 36px; padding: 0 13px; border-radius: 999px;
@@ -231,24 +366,31 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   text-decoration: line-through; text-decoration-color: rgba(0,0,0,0.3);
 }
+/* Petit rond de couleur. --c est une variable posée en ligne par le JavaScript
+   (style="--c: #..."), propre à chaque type de point. */
 .fchip i { width: 10px; height: 10px; border-radius: 50%; background: #c6c6c6; }
 .fchip.on { background: #fff; color: var(--ink); text-decoration: none; }
 .fchip.on i { background: var(--c); }
+/* Filtre « Aujourd'hui » : jamais barré, noir quand il est actif. */
 .fchip-today { text-decoration: none; }
 .fchip-today.on { background: var(--ink); color: #fff; }
 
+/* Bouton rond blanc flottant sur la carte (ici : me localiser, en haut à droite). */
 .map-btn {
   position: absolute; z-index: 600; display: grid; place-items: center;
   width: 46px; height: 46px; border: 0; border-radius: 50%;
   background: #fff; color: var(--violet); box-shadow: var(--shadow-sm);
 }
 .map-btn.locate { top: 8px; right: 10px; }
+/* Boutons +/- de zoom de Leaflet cachés sur mobile (on zoome avec deux doigts). */
 .leaflet-control-zoom { display: none; }
 
+/* Pile de boutons d'action flottants (« FAB » = floating action button) en bas à droite. */
 .fabs {
   position: absolute; right: 12px; bottom: 16px; z-index: 600;
   display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
 }
+/* Bouton flottant en forme de pilule ; la seconde ombre, sans flou, dessine un anneau blanc de 3px. */
 .fab {
   display: inline-flex; align-items: center; gap: 8px;
   height: 48px; padding: 0 18px 0 14px; border: 0; border-radius: 999px;
@@ -257,10 +399,14 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
   transition: transform 0.12s;
 }
 .fab:active { transform: scale(0.96); }
+/* Variantes : Alerte (orange), Danger (rouge), Ajouter (plus grand, violet). */
 .fab-warning { background: #ffc400; color: var(--ink); }
 .fab-danger { background: var(--red); color: #fff; }
 .fab-add { height: 60px; padding: 0 24px 0 18px; font-size: 22px; background: var(--violet); color: #fff; }
 
+/* Bulle d'aide du mode Trajet, centrée en haut de la carte : left: 50% + translateX(-50%)
+   est la technique classique pour centrer un élément en position absolute.
+   Visible seulement quand main.ts a mis data-view="route" sur .app. */
 .route-hint {
   display: none; position: absolute; top: 56px; left: 50%; transform: translateX(-50%); z-index: 600;
   align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px;
@@ -270,15 +416,26 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 .app[data-view='route'] .route-hint { display: flex; }
 
 /* Leaflet */
+/* Leaflet (bibliothèque de carte) : on lui impose notre police. Le !important de
+   l'attribution écrase le fond défini par la feuille de styles de Leaflet. */
 .leaflet-container { font-family: var(--font); }
 .leaflet-control-attribution { font-size: 10px; background: rgba(255,255,255,0.7) !important; }
+/* Infobulle au survol d'une épingle. */
 .pin-tip { font-weight: 600; font-size: 13px; border-radius: var(--r); border: 0; box-shadow: var(--shadow-sm); }
+/* Point bleu « ma position » et son halo de précision (cercles SVG : fill = remplissage,
+   stroke = contour). */
 .me-dot { fill: #1a73e8; fill-opacity: 1; stroke: #fff; stroke-width: 3; stroke-opacity: 1; }
 .me-halo { fill: #1a73e8; fill-opacity: 0.12; stroke: #1a73e8; stroke-opacity: 0.35; stroke-width: 1; }
 
 /* Épingles */
+/* Épingles. Le conteneur créé par Leaflet (divIcon) a un fond blanc par défaut : on le retire. */
 .pin-wrap { background: none; border: 0; }
+/* L'épingle mesure 36 x 46px. transform-origin : point d'ancrage des transformations placé à
+   la pointe (18px, 42px), pour qu'en grossissant elle reste plantée au même endroit. */
 .pin { position: relative; width: 36px; height: 46px; transition: opacity 0.2s, transform 0.2s; transform-origin: 18px 42px; }
+/* Tête de l'épingle : un carré aux coins tous arrondis sauf un (50% 50% 50% 0), tourné
+   de -45° : le coin pointu se retrouve en bas, d'où la forme de goutte.
+   var(--c) = couleur du type de point. */
 .pin-head {
   position: absolute; left: 1px; top: 0; width: 34px; height: 34px;
   display: grid; place-items: center;
@@ -287,18 +444,27 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
   transform: rotate(-45deg);
   box-shadow: -2px 3px 7px rgba(0,0,0,0.35);
 }
+/* L'icône est tournée de +45° en sens inverse pour rester droite. */
 .pin-head .ico { transform: rotate(45deg); color: var(--ink); }
+/* Points en alerte : un anneau (::after) grandit et s'efface en boucle (animation pulse, plus bas).
+   inset: -8px : l'anneau dépasse de 8px tout autour de la tête. */
 .pin-alert .pin-head::after {
   content: ''; position: absolute; inset: -8px; border-radius: 50%;
   border: 3px solid var(--c); animation: pulse 1.6s ease-out infinite;
 }
+/* Danger : pulsation plus rapide. */
 .pin-danger .pin-head::after { animation-duration: 1.1s; }
+/* Statut d'un panneau d'affichage : collé (anneau vert), abîmé (anneau rouge). Une ombre sans
+   flou sert d'anneau ; on répète l'ombre portée car box-shadow se remplace en entier. */
 .pin-st-colle .pin-head { border-color: #b6f0d8; box-shadow: 0 0 0 3px var(--green), -2px 3px 7px rgba(0,0,0,0.35); }
 .pin-st-abime .pin-head { box-shadow: 0 0 0 3px var(--red), -2px 3px 7px rgba(0,0,0,0.35); }
+/* Petit rond en haut à gauche : ce point a une photo. */
 .pin-photo { position: absolute; top: 0; left: 0; width: 11px; height: 11px; border-radius: 50%; background: #fff; border: 2.5px solid var(--c); }
+/* Épingle estompée (exclue par un filtre), épingle sélectionnée (agrandie, bord jaune). */
 .pin-dim { opacity: 0.3; }
 .pin-selected { transform: scale(1.15); }
 .pin-selected .pin-head { border-color: var(--yellow); border-width: 3px; }
+/* Pastille de nombre en haut à droite de l'épingle. */
 .pin-badge {
   position: absolute; top: -8px; right: -8px; min-width: 22px; height: 22px; padding: 0 5px;
   display: grid; place-items: center; border-radius: 11px; border: 2px solid #fff;
@@ -307,11 +473,19 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 }
 
 /* Viseur de placement */
+/* Viseur de placement. Pendant le placement d'un nouveau point (map.ts ajoute .picking sur
+   .map-wrap), on cache ce qui gêne. !important pour gagner sur les display: flex définis
+   par d'autres règles (ex. .route-hint en mode Trajet). */
 .picking .map-filters, .picking .fabs, .picking .route-hint { display: none !important; }
+/* Viseur au centre exact de la carte ; pointer-events: none : il laisse passer les gestes
+   vers la carte en dessous. */
 .picker { position: absolute; left: 50%; top: 50%; z-index: 700; pointer-events: none; }
+/* translate(-50%, -100%) : la pointe de l'épingle tombe pile sur le centre ; l'animation
+   « drop » la fait tomber d'en haut. */
 .picker-pin { position: absolute; transform: translate(-50%, -100%); color: #fff; animation: drop 0.35s ease-out; }
 .picker-pin .ico { width: 52px; height: 52px; fill: var(--c); stroke: #fff; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); }
 .picker-shadow { position: absolute; width: 14px; height: 6px; border-radius: 50%; background: rgba(0,0,0,0.35); transform: translate(-50%, -50%); }
+/* Barre d'actions en bas pendant le placement ; max-width + margin: 0 auto la centrent sur grand écran. */
 .picker-bar {
   position: absolute; left: 10px; right: 10px; bottom: 12px; z-index: 700;
   background: #fff; border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 14px;
@@ -321,17 +495,25 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 .picker-hint { display: flex; flex-direction: column; }
 .picker-hint strong { font-family: var(--font-title); font-size: 24px; text-transform: uppercase; line-height: 1; }
 .picker-hint span { color: var(--muted); font-size: 14px; }
+/* Trois boutons : Annuler (largeur naturelle, auto), Ma position, Placer ici (un peu plus large). */
 .picker-actions { display: grid; grid-template-columns: auto 1fr 1.2fr; gap: 8px; }
 .picker-actions .btn { padding: 0 10px; }
 
 /* ---------- Fenêtres (sheets) ---------- */
 
+/* 7. FENÊTRES. Fond assombri derrière une fenêtre. position: fixed : collé à l'écran, pas à
+   la page. z-index 2000 : devant tout, carte comprise. flex + align-items: flex-end : la
+   fenêtre est posée en bas (style « bottom sheet » mobile). Le fond passe de transparent
+   à 50 % d'opacité quand .open est ajoutée (transition de 0,25 s). */
 .sheet-backdrop {
   position: fixed; inset: 0; z-index: 2000;
   display: flex; align-items: flex-end; justify-content: center;
   background: rgba(0,35,44,0); transition: background 0.25s;
 }
 .sheet-backdrop.open { background: rgba(0,35,44,0.5); }
+/* La fenêtre : au plus 92 % de la hauteur visible ; colonne flex (titre, corps qui défile,
+   pied). Elle part décalée de 100 % vers le bas (hors écran) puis glisse vers le haut ;
+   cubic-bezier = courbe de vitesse (départ rapide, arrivée en douceur). */
 .sheet {
   position: relative; width: 100%; max-height: 92dvh;
   display: flex; flex-direction: column;
@@ -340,43 +522,59 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
   overflow: hidden;
 }
 .sheet-backdrop.open .sheet { transform: translateY(0); }
+/* Bandeau de couleur en haut de la fenêtre : var(--accent) si le JS l'a définie, sinon
+   violet (le 2e argument de var() est la valeur de repli). */
 .sheet::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 6px; background: var(--accent, var(--violet)); }
+/* Petite poignée grise (décor façon iOS). */
 .sheet-grab { display: flex; justify-content: center; padding: 12px 0 0; }
 .sheet-grab span { width: 44px; height: 5px; border-radius: 3px; background: var(--line); }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 10px 6px 20px; }
 .sheet-title { margin: 0; font-family: var(--font-title); font-weight: 800; font-size: 28px; text-transform: uppercase; line-height: 1.05; }
+/* Seul le corps défile ; le pied (boutons) reste visible, avec la zone de la barre d'accueil iPhone. */
 .sheet-body { overflow-y: auto; overscroll-behavior: contain; padding: 6px 20px 20px; }
 .sheet-foot { padding: 12px 20px calc(12px + var(--safe-b)); border-top: 1px solid var(--line); background: #fff; }
 .confirm-text { margin: 0 0 6px; font-size: 16px; }
 
 /* ---------- Formulaires ---------- */
 
+/* Formulaires : champs empilés avec 18px d'écart. min-width: 0 sur .field : voir .brand plus haut. */
 .form { display: flex; flex-direction: column; gap: 18px; }
 .field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .field-label { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
 .field-label em { font-style: normal; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--muted); }
 .field-hint { font-size: 13px; color: var(--muted); margin: 0; }
+/* Champ de saisie. La taille de 16px n'est pas décorative : en dessous, Safari sur iPhone
+   zoome toute la page dès qu'on touche le champ. */
 .input {
   width: 100%; min-height: 48px; padding: 11px 13px;
   font-size: 16px; /* évite le zoom automatique sur iPhone */
   background: #fff; color: var(--ink); border: 2px solid var(--line); border-radius: var(--r);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
+/* Focus : bordure violette + halo (box-shadow) à la place du contour par défaut. */
 .input:focus { outline: none; border-color: var(--violet); box-shadow: 0 0 0 4px color-mix(in srgb, var(--violet) 15%, transparent); }
 .input::placeholder { color: var(--muted); opacity: 1; }
+/* textarea redimensionnable seulement en hauteur. Date / heure : padding réduit
+   (voir aussi les correctifs iPhone en fin de fichier). */
 textarea.input { resize: vertical; min-height: 84px; }
 input[type='date'].input, input[type='time'].input { padding: 8px 10px; min-width: 0; }
 
+/* .seg : « contrôle segmenté » (boutons accolés, un seul actif), ex. Point fixe | Événement.
+   grid-auto-columns: 1fr : tous les segments ont la même largeur. overflow: hidden coupe
+   les coins des segments pour suivre l'arrondi du cadre. */
 .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 2px solid var(--violet); border-radius: var(--r); overflow: hidden; background: #fff; }
 .seg-btn {
   display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 8px;
   border: 0; background: transparent; color: var(--violet);
   font-family: var(--font-title); font-weight: 700; font-size: 17px; text-transform: uppercase;
 }
+/* .seg-btn + .seg-btn : tout segment SAUF le premier (« + » = frère immédiatement suivant)
+   reçoit un trait à gauche. */
 .seg-btn + .seg-btn { border-left: 2px solid var(--violet); }
 .seg-btn.on { background: var(--violet); color: #fff; }
 .seg-big .seg-btn { min-height: 52px; font-size: 20px; }
 
+/* Puces sélectionnables (choix multiples) qui passent à la ligne (flex-wrap). */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   min-height: 38px; padding: 0 14px; border-radius: 999px;
@@ -386,6 +584,8 @@ input[type='date'].input, input[type='time'].input { padding: 8px 10px; min-widt
 .chip:hover { border-color: color-mix(in srgb, var(--violet) 35%, #fff); }
 .chip.on { background: var(--violet); border-color: var(--violet); color: #fff; }
 
+/* Grille des types de point : repeat(auto-fill, minmax(96px, 1fr)) crée autant de colonnes
+   d'au moins 96px que la largeur le permet, puis les élargit pour remplir la ligne. */
 .type-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
 .type-tile {
   display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px 10px;
@@ -393,11 +593,15 @@ input[type='date'].input, input[type='time'].input { padding: 8px 10px; min-widt
   transition: border-color 0.15s, background 0.15s, transform 0.1s;
 }
 .type-tile:active { transform: scale(0.97); }
+/* Rond coloré (couleur --c) qui porte l'icône du type. */
 .type-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--c); color: var(--ink); }
 .type-ico .ico { color: var(--ink); }
 .type-label { font-family: var(--font-title); font-weight: 700; font-size: 16px; text-transform: uppercase; line-height: 1.05; text-align: center; }
+/* Tuile choisie : bordure colorée + fond teinté + ombre intérieure (inset) qui double la
+   bordure sans changer la taille de la tuile. */
 .type-tile.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 10%, #fff); box-shadow: 0 0 0 2px var(--c) inset; }
 
+/* Pastilles de couleur à choisir ; .on : anneau foncé ; -auto : pastille « automatique ». */
 .swatches { display: flex; flex-wrap: wrap; gap: 10px; }
 .swatch {
   width: 36px; height: 36px; border-radius: 50%; border: 3px solid #fff;
@@ -406,16 +610,21 @@ input[type='date'].input, input[type='time'].input { padding: 8px 10px; min-widt
 .swatch.on { box-shadow: 0 0 0 3px var(--ink); }
 .swatch-auto { font-size: 10px; font-weight: 800; color: #fff; text-transform: uppercase; text-shadow: 0 1px 2px rgba(0,0,0,0.4); }
 
+/* Carte blanche qui regroupe une partie de formulaire ; dans une fenêtre, elle devient lilas sans bordure. */
 .card-section {
   display: flex; flex-direction: column; gap: 14px;
   background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px;
 }
 .sheet .card-section { background: var(--violet-tint); border-color: transparent; }
+/* Titre de section (icône + texte). */
 .section-title {
   display: flex; align-items: center; gap: 8px;
   font-family: var(--font-title); font-weight: 800; font-size: 20px; text-transform: uppercase; color: var(--violet-deep);
 }
 
+/* Choix de photo : zone pointillée vide, aperçu, boutons posés en bas à droite de l'aperçu
+   (absolute par rapport à .photo-pick qui est en relative). object-fit: cover : l'image
+   remplit le cadre en étant rognée plutôt que déformée. */
 .photo-pick { position: relative; }
 .photo-empty {
   width: 100%; min-height: 104px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
@@ -426,6 +635,8 @@ input[type='date'].input, input[type='time'].input { padding: 8px 10px; min-widt
 .photo-preview { display: block; width: 100%; max-height: 240px; object-fit: cover; border-radius: var(--r-lg); }
 .photo-actions { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 6px; }
 
+/* Position du point : ligne d'info, carte d'état (OK / erreur), deux boutons côte à côte.
+   minmax(0, 1fr) plutôt que 1fr : les colonnes peuvent rétrécir sous la taille du texte. */
 .loc-line { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--muted); }
 .loc-card { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: var(--r-lg); background: color-mix(in srgb, var(--accent) 12%, #fff); }
 .loc-status { display: flex; align-items: center; gap: 10px; font-weight: 600; }
@@ -436,12 +647,17 @@ input[type='date'].input, input[type='time'].input { padding: 8px 10px; min-widt
 .loc-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .loc-actions .btn { background: #fff; min-width: 0; padding: 4px 8px; white-space: normal; line-height: 1.05; }
 
+/* Balise <details> native (« Plus d'options ») : on retire le triangle par défaut
+   (list-style: none) et on affiche « + » ou « – » selon qu'elle est ouverte ([open]). */
 details.more { border-top: 1px solid var(--line); padding-top: 12px; }
 details.more summary { cursor: pointer; font-weight: 600; color: var(--violet); list-style: none; }
 details.more summary::before { content: '+ '; font-weight: 800; }
 details.more[open] summary { margin-bottom: 12px; }
 details.more[open] summary::before { content: '– '; }
 
+/* Interrupteur on/off fait maison. La vraie case à cocher est invisible mais reste cliquable
+   et accessible au clavier ; le .switch qui la suit dessine le rail, son ::after le bouton
+   rond. input:checked + .switch = « le .switch placé juste après une case cochée ». */
 .toggle-line { position: relative; display: flex; align-items: center; gap: 12px; font-weight: 500; cursor: pointer; }
 .toggle-line input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .switch { position: relative; width: 44px; height: 26px; flex: none; border-radius: 13px; background: color-mix(in srgb, var(--violet) 18%, #c8c8c8); transition: background 0.2s; }
@@ -451,27 +667,37 @@ details.more[open] summary::before { content: '– '; }
 .toggle-line input:focus-visible + .switch { outline: 3px solid var(--yellow); outline-offset: 2px; }
 .toggle-line.compact { font-size: 14px; }
 
+/* Roue de chargement : cercle dont seul le bord du haut est violet, qui tourne. */
 .spinner { width: 20px; height: 20px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--violet) 22%, #fff); border-top-color: var(--violet); animation: spin 0.8s linear infinite; }
 
 /* ---------- Fiche d'un point ---------- */
 
+/* 8. FICHE D'UN POINT (dans une fenêtre). */
 .detail { display: flex; flex-direction: column; gap: 12px; }
 .detail-photo img { display: block; width: 100%; max-height: 280px; object-fit: cover; border-radius: var(--r-lg); }
 .detail-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Étiquettes (type, statut...), pleine ou en contour. */
 .tag {
   display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: var(--r);
   font-family: var(--font-title); font-weight: 700; font-size: 15px; text-transform: uppercase; letter-spacing: 0.03em;
 }
 .tag-outline { border: 1.5px solid var(--line); color: var(--ink-soft); }
+/* Titre, date (rouge si alerte), description (pre-wrap garde les retours à la ligne tapés),
+   informations secondaires en petit. */
 .detail-title { margin: 0; font-family: var(--font-title); font-weight: 800; font-size: 32px; line-height: 1; text-transform: uppercase; }
 .detail-when { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; color: var(--ink-soft); }
 .detail-when.alert { color: #b31b1b; }
 .detail-desc { margin: 0; white-space: pre-wrap; font-size: 15.5px; background: var(--violet-tint); padding: 12px 14px; border-left: 4px solid var(--accent, var(--violet)); }
 .detail-meta { margin: 0; font-size: 13px; color: var(--muted); }
+/* Boutons d'action en grille de 2 colonnes égales. */
 .detail-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
 /* Écrans étroits : les libellés des boutons passent à la ligne au lieu de déborder. */
 .detail-actions .btn, .card-section .grid-2 .btn { min-width: 0; padding: 4px 10px; white-space: normal; line-height: 1.05; text-align: center; }
+/* Astuce : si le nombre de boutons est impair, le premier occupe toute la ligne.
+   :first-child:nth-last-child(odd) = le premier enfant, s'il est aussi à une position impaire
+   en comptant depuis la fin (donc nombre total impair). grid-column: 1 / -1 = toute la largeur. */
 .detail-actions > :first-child:nth-last-child(odd) { grid-column: 1 / -1; }
+/* Trois boutons de statut ; couleur selon le statut actif (st-a_coller, st-colle, st-abime). */
 .status-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .status-btn {
   display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; padding: 4px 6px;
@@ -484,10 +710,14 @@ details.more[open] summary::before { content: '– '; }
 
 /* ---------- Agenda ---------- */
 
+/* AGENDA. Navigation entre semaines (flèches + libellé cliquable). */
 .week-nav { display: flex; align-items: center; gap: 2px; }
 .week-label { border: 0; background: none; font-weight: 700; min-width: 130px; text-align: center; padding: 6px; border-radius: var(--r); }
 .week-label:hover { background: var(--violet-soft); }
+/* Bande des 7 jours de la semaine (7 colonnes égales). */
 .day-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+/* Une pastille de jour : jour de la semaine, numéro, petits points colorés des événements.
+   Bordure dessinée par une ombre intérieure (inset) : elle ne prend aucune place. */
 .day-pill {
   display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 0 7px;
   border: 0; border-radius: var(--r-lg); background: #fff; box-shadow: inset 0 0 0 1px var(--line);
@@ -496,12 +726,15 @@ details.more[open] summary::before { content: '– '; }
 .day-pill .dnum { font-family: var(--font-title); font-weight: 800; font-size: 24px; line-height: 1; }
 .day-pill .dots { display: flex; gap: 2px; height: 6px; }
 .day-pill .dots i { width: 6px; height: 6px; border-radius: 50%; }
+/* Aujourd'hui : pastille pleine violette. */
 .day-pill.today { background: var(--violet); box-shadow: none; color: #fff; }
 .day-pill.today .dow { color: rgba(255,255,255,0.8); }
 .day-pill.today .dots i { box-shadow: 0 0 0 1.5px #fff; }
 
+/* Liste des jours. scroll-margin-top : marge gardée en haut quand le JS fait défiler jusqu'à un jour. */
 .agenda-list { display: flex; flex-direction: column; gap: 20px; }
 .agenda-day { display: flex; flex-direction: column; gap: 8px; scroll-margin-top: 12px; }
+/* Titre du jour ; align-items: baseline aligne les deux tailles de texte sur la même ligne de base. */
 .agenda-day-title {
   margin: 0; display: flex; align-items: baseline; gap: 10px;
   font-family: var(--font-title); font-weight: 800; font-size: 22px; text-transform: uppercase; color: var(--ink);
@@ -510,14 +743,18 @@ details.more[open] summary::before { content: '– '; }
 .agenda-day-title small { font-family: var(--font); font-size: 13px; font-weight: 600; text-transform: none; color: var(--muted); }
 .agenda-empty-day { margin: 0; color: var(--muted); font-size: 14px; }
 
+/* Carte d'un événement dans l'agenda (sa couleur de fond est posée en ligne par le JS). */
 .ev-card {
   position: relative; display: flex; align-items: flex-start; gap: 12px; width: 100%;
   padding: 12px 14px; border: 0; border-radius: var(--r-lg); text-align: left;
   box-shadow: 0 3px 10px rgba(0,0,0,0.12); transition: transform 0.12s, box-shadow 0.15s;
 }
+/* Survol : légère montée ; passé : pâli ; en cours : double anneau blanc + jaune. */
 .ev-card:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,0.18); }
 .ev-card.past { opacity: 0.5; }
 .ev-card.live { box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--yellow), 0 6px 16px rgba(0,0,0,0.18); }
+/* Contenu de la carte : icône, horaires, titre (coupé n'importe où si un mot est trop long),
+   description limitée à 2 lignes (-webkit-line-clamp : standard de fait malgré le préfixe). */
 .ev-ico { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 50%; background: rgba(255,255,255,0.22); }
 .ev-main { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 .ev-time { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-weight: 700; font-size: 13.5px; opacity: 0.92; }
@@ -527,6 +764,7 @@ details.more[open] summary::before { content: '– '; }
 .ev-type { opacity: 0.75; }
 .ev-photo-flag { position: absolute; top: 10px; right: 12px; opacity: 0.85; }
 
+/* État vide (« aucun événement ») : icône, titre, bouton, centrés. */
 .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 30px 16px; color: var(--muted); }
 .empty .ico { color: #c9b5e6; }
 .empty strong { font-family: var(--font-title); font-size: 22px; text-transform: uppercase; color: var(--ink); }
@@ -535,40 +773,52 @@ details.more[open] summary::before { content: '– '; }
 
 /* ---------- Trajet ---------- */
 
+/* TRAJET. Barre d'outils ; liste des panneaux à cocher, qui défile au-delà de 330px. */
 .route-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .pick-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 330px; overflow-y: auto; }
+/* Une ligne cochable de la liste. */
 .pick-row {
   display: flex; align-items: center; gap: 10px; padding: 8px 6px 8px 12px;
   background: #fff; border: 2px solid var(--line); border-radius: var(--r-lg); cursor: pointer;
 }
 .pick-row.on { border-color: var(--violet); background: var(--violet-tint); }
+/* accent-color colore la case à cocher native du navigateur. */
 .pick-row input { width: 20px; height: 20px; accent-color: var(--violet); flex: none; }
 .pick-dot { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; flex: none; }
 .pick-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .pick-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pick-sub { font-size: 12.5px; color: var(--muted); }
+/* Bouton collé en bas de la zone qui défile. position: sticky = l'élément se comporte
+   normalement, puis reste « collé » à 8px du bas quand on fait défiler. */
 .sticky-cta { position: sticky; bottom: 8px; z-index: 2; box-shadow: 0 6px 18px color-mix(in srgb, var(--violet) 35%, transparent); }
 /* Désactivé : gris plein (pas transparent par-dessus la liste). */
 .btn.sticky-cta:disabled { opacity: 1; background: #d9d6dc; color: #6a6a6a; box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
 
+/* Résultat du trajet : 3 chiffres clés puis la liste des étapes. */
 .route-result { display: flex; flex-direction: column; gap: 14px; scroll-margin-top: 10px; }
 .route-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .stat { display: flex; flex-direction: column; align-items: center; padding: 12px 6px; background: var(--violet); color: #fff; border-radius: var(--r-lg); text-align: center; }
 .stat strong { font-family: var(--font-title); font-weight: 800; font-size: 25px; line-height: 1; }
 .stat span { font-size: 12px; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-top: 4px; }
+/* Étapes numérotées, reliées par une ligne pointillée verticale (::after) qui part sous
+   chaque numéro, sauf pour la dernière étape (:not(:last-child)). */
 .route-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .step { position: relative; display: flex; align-items: center; gap: 12px; padding: 8px 0; min-height: 48px; }
 .step:not(:last-child)::after { content: ''; position: absolute; left: 14px; top: 38px; bottom: -10px; border-left: 3px dotted color-mix(in srgb, var(--violet) 35%, #fff); }
+/* z-index: 1 : le numéro passe devant la ligne pointillée. */
 .step-num {
   display: grid; place-items: center; width: 31px; height: 31px; flex: none; border-radius: 50%;
   background: var(--yellow); color: var(--ink); font-weight: 800; font-size: 14px; border: 2px solid var(--ink); z-index: 1;
 }
 .step.start .step-num { background: var(--ink); color: #fff; }
 .step-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+/* Bloc d'export du trajet. */
 .export { display: flex; flex-direction: column; gap: 10px; padding: 16px; background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg); }
 
 /* ---------- Équipe ---------- */
 
+/* ÉQUIPE. Listes de lignes (appareils, membres) ; .row + .row = toutes les lignes sauf la
+   première reçoivent un trait au-dessus. */
 .rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .row { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
 .row + .row { border-top: 1px solid var(--line); }
@@ -576,20 +826,26 @@ details.more[open] summary::before { content: '– '; }
 .row-main strong { overflow: hidden; text-overflow: ellipsis; }
 .row-main strong em { font-style: normal; color: var(--muted); font-weight: 500; }
 .row-main span { font-size: 13px; color: var(--muted); }
+/* Carte « mon appareil » et carte d'invitation. */
 .me-card { display: flex; align-items: center; gap: 12px; }
 .invite-card { background: linear-gradient(160deg, #fff 0%, var(--violet-tint) 100%); border: 2px solid var(--violet); }
 .invite-show { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .invite-who { margin: 0; font-family: var(--font-title); font-weight: 800; font-size: 20px; text-transform: uppercase; color: var(--violet); }
+/* QR code d'invitation : largeur = la plus petite de 290px et 78 % de l'écran (min()).
+   Expiré : presque transparent et en niveaux de gris. */
 .qr { width: min(290px, 78vw); padding: 12px; background: #fff; border: 4px solid var(--ink); border-radius: var(--r-lg); transition: opacity 0.3s, filter 0.3s; }
 .qr svg { display: block; width: 100%; height: auto; }
 .qr.expired { opacity: 0.15; filter: grayscale(1); }
+/* Compte à rebours de validité de l'invitation. */
 .countdown { font-family: var(--font-title); font-weight: 800; font-size: 24px; text-transform: uppercase; }
 .invite-show .grid-2 { width: 100%; }
+/* Encadré sombre de conseils de sécurité. */
 .security-note { background: var(--ink); color: #fff; border: 0; }
 .security-note .section-title { color: var(--yellow); }
 .bullets { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; opacity: 0.95; }
 
 /* Accueil */
+/* Liste de conseils de l'écran d'accueil, chacun avec une icône ronde colorée. */
 .tips { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 14px; }
 .tip { display: flex; gap: 14px; align-items: flex-start; }
 .tip div { display: flex; flex-direction: column; }
@@ -603,11 +859,15 @@ details.more[open] summary::before { content: '– '; }
 
 /* ---------- Toasts ---------- */
 
+/* Notifications éphémères. Fixées sous la barre du haut, centrées. z-index 3000 : devant
+   les fenêtres (2000). pointer-events: none : on peut toucher ce qu'il y a dessous
+   (les notifications cliquables le réactivent, voir .toast-link). */
 .toasts {
   position: fixed; left: 50%; top: calc(var(--topbar) + var(--safe-t) + 10px); transform: translateX(-50%);
   z-index: 3000; display: flex; flex-direction: column; align-items: center; gap: 8px;
   width: min(92vw, 440px); pointer-events: none;
 }
+/* Une notification : invisible et décalée vers le haut ; .in la fait apparaître en glissant. */
 .toast {
   display: flex; align-items: center; gap: 10px; padding: 12px 16px;
   background: var(--ink); color: #fff; border-radius: var(--r-lg); box-shadow: var(--shadow);
@@ -620,31 +880,48 @@ details.more[open] summary::before { content: '– '; }
 
 /* ---------- Animations ---------- */
 
+/* 9. ANIMATIONS. @keyframes décrit les étapes ; une règle les joue via la propriété animation.
+   spin : rotation complète ; pulse : anneau qui grossit en s'effaçant ; drop : épingle qui
+   tombe, s'enfonce un peu, puis se pose. */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 0% { transform: scale(0.7); opacity: 0.9; } 100% { transform: scale(1.6); opacity: 0; } }
 @keyframes drop { 0% { transform: translate(-50%, -160%); } 70% { transform: translate(-50%, -92%); } 100% { transform: translate(-50%, -100%); } }
 
+/* Si l'utilisateur a demandé « réduire les animations » dans son système, elles deviennent
+   quasi instantanées (0,01 ms plutôt que 0 : les événements de fin d'animation se
+   déclenchent quand même, au cas où le JS les attend). */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
 /* ---------- Mobile : trajet en demi-panneau au-dessus de la carte ---------- */
 
+/* 10. MEDIA QUERY : règles appliquées seulement si l'écran fait moins de 900px de large.
+   899.98 plutôt que 899 : pas de « trou » avec le bloc min-width: 900px sur les écrans
+   à pixels fractionnaires (zoom, écrans haute densité).
+   Mode Trajet sur mobile : le panneau n'occupe que 74 % du bas (align-self: end le pose
+   en bas de sa case de grille), pour voir la carte et y toucher les panneaux. */
 @media (max-width: 899.98px) {
   .app[data-panel='route'] .panel {
     align-self: end; height: 74%; border-radius: 18px 18px 0 0;
     box-shadow: 0 -8px 24px rgba(0,35,44,0.2);
   }
+  /* La poignée reste en haut du panneau quand il défile (sticky). */
   .app[data-panel='route'] .panel-grab { display: flex; justify-content: center; padding-top: 10px; position: sticky; top: 0; background: var(--panel); z-index: 3; }
   .app[data-panel='route'] .panel-grab span { width: 44px; height: 5px; border-radius: 3px; background: var(--line); }
   .app[data-panel='route'] .panel-view { padding-top: 8px; }
+  /* Pendant le trajet : boutons flottants et filtres de la carte cachés. */
   .app[data-panel='route'] .fabs { display: none; }
   .app[data-panel='route'] .map-filters { display: none; }
   .app[data-panel='route'] .route-hint { top: 12px; }
+  /* Sur mobile, la pastille « moi » ne montre que l'avatar. */
   .me-name { display: none; }
   .me-chip { padding: 4px; }
 }
 
+/* Très petits téléphones (< 380px) : grille de 3 colonnes ramenée à 2 (le 1er champ prend
+   toute la ligne), boutons flottants plus petits, boutons du viseur réorganisés
+   (order: 3 envoie « Annuler » en dernier). */
 @media (max-width: 379.98px) {
   .grid-3 { grid-template-columns: 1fr 1fr; }
   .grid-3 > :first-child { grid-column: 1 / -1; }
@@ -656,11 +933,14 @@ details.more[open] summary::before { content: '– '; }
 
 /* ---------- Ordinateur ---------- */
 
+/* ORDINATEUR (>= 900px) : plus de barre du bas, onglets dans la barre du haut, panneau à
+   gauche (entre 380 et 420px) et carte à droite (1fr), côte à côte. */
 @media (min-width: 900px) {
   .bottomnav { display: none; }
   .app { grid-template-rows: auto 1fr; }
   .topbar { padding: 0 20px; gap: 28px; }
   .toptabs { display: flex; align-self: stretch; gap: 4px; }
+  /* Onglet du haut ; l'onglet actif est souligné en jaune (::after en position absolute). */
   .toptab {
     display: flex; align-items: center; gap: 8px; padding: 0 16px; border: 0; background: none; color: rgba(255,255,255,0.78);
     font-family: var(--font-title); font-weight: 700; font-size: 20px; text-transform: uppercase; letter-spacing: 0.03em;
@@ -669,13 +949,18 @@ details.more[open] summary::before { content: '– '; }
   .toptab:hover { color: #fff; }
   .toptab.on { color: #fff; }
   .toptab.on::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 5px; background: var(--yellow); }
+  /* Deux colonnes : panneau toujours visible en colonne 1, carte en colonne 2. */
   .main { grid-template-columns: minmax(380px, 420px) 1fr; }
   .panel { display: block; grid-area: 1 / 1; border-right: 1px solid var(--line); }
   .map-wrap { grid-area: 1 / 2; }
   .panel-view { padding: 24px 22px 32px; }
+  /* Zoom +/- réaffiché et descendu sous la barre de filtres ; !important car Leaflet fixe
+     lui-même cette marge. */
   .leaflet-control-zoom { display: block; margin-top: 64px !important; }
   .map-filters { right: 70px; }
   .fabs { right: 20px; bottom: 26px; }
+  /* Fenêtres : centrées comme une boîte de dialogue, apparition par fondu + léger zoom
+     au lieu du glissement depuis le bas. */
   .sheet-backdrop { align-items: center; padding: 24px; }
   .sheet {
     width: 560px; max-height: 88vh; border-radius: var(--r-lg);
@@ -686,8 +971,10 @@ details.more[open] summary::before { content: '– '; }
   .sheet-grab { display: none; }
   .sheet-head { padding-top: 18px; }
   .pick-list { max-height: 360px; }
+  /* Notifications en bas de l'écran sur ordinateur. */
   .toasts { top: auto; bottom: 24px; }
 }
+/* Grille d'une seule colonne (formulaire d'événement « toute la journée »). */
 .grid-1 { display: grid; grid-template-columns: 1fr; gap: 10px; }
 
 /* ---------- Problème signalé sur un point ---------- */
@@ -697,6 +984,7 @@ details.more[open] summary::before { content: '– '; }
   content: ''; position: absolute; inset: -8px; border-radius: 50%;
   border: 3px solid var(--red); animation: pulse 1.1s ease-out infinite;
 }
+/* La tête de l'épingle clignote aussi (son anneau rouge s'élargit), en plus de la pulsation. */
 .pin-problem .pin-head { animation: problem-blink 1.1s ease-in-out infinite; }
 .pin-problem .pin-badge { background: var(--red); color: #fff; }
 @keyframes problem-blink {
@@ -704,6 +992,7 @@ details.more[open] summary::before { content: '– '; }
   50% { box-shadow: 0 0 0 6px rgba(245,59,59,0.35), -2px 3px 7px rgba(0,0,0,0.35); }
 }
 
+/* Encadré rouge « problème signalé » dans la fiche : titre, infos, actions. */
 .problem-card {
   display: flex; flex-direction: column; gap: 6px; padding: 12px 14px;
   background: #fff0f0; border: 2px solid var(--red); border-radius: var(--r-lg);
@@ -713,9 +1002,13 @@ details.more[open] summary::before { content: '– '; }
 .problem-meta { font-size: 13px; color: var(--ink-soft); }
 .problem-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 
+/* Bouton à contour rouge. */
 .btn-outline-danger { background: #fff; color: #c41d1d; border-color: var(--red); }
 .btn-outline-danger:hover { background: #fff0f0; }
 
+/* Petite étiquette « Problème » qui clignote dans la carte d'agenda. align-self: flex-start :
+   elle ne s'étire pas sur toute la largeur. Une keyframe avec seulement 50 % : le début et la
+   fin reprennent le style normal de l'élément. */
 .ev-problem {
   display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-top: 4px;
   background: #fff; color: #b3141b; padding: 2px 8px; border-radius: 999px;
@@ -725,18 +1018,23 @@ details.more[open] summary::before { content: '– '; }
 @keyframes problem-chip { 50% { background: #ffd6d6; } }
 
 /* ---------- Blocus et blocages ---------- */
+/* Statuts d'un blocus : tenu (vert), vidé (gris), levé (rouge). */
 .status-btn.on.st-tenu { background: var(--green); border-color: var(--green); color: #fff; }
 .status-btn.on.st-vide { background: #5B6770; border-color: #5B6770; color: #fff; }
 .status-btn.on.st-leve { background: var(--red); border-color: var(--red); color: #fff; }
+/* Bouton de statut sur deux lignes (statut + précision en petit). */
 .status-two { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .status-two small { font-weight: 500; font-size: 11.5px; opacity: 0.8; }
+/* Épingle d'un blocus tenu (anneau vert) ou levé (grisée). */
 .pin-st-tenu .pin-head { box-shadow: 0 0 0 3px var(--green), -2px 3px 7px rgba(0,0,0,0.35); }
 .pin-st-leve .pin-head { filter: grayscale(0.85); opacity: 0.75; }
+/* Lien vers le point « parent » (le blocus) depuis un blocage. */
 .parent-line {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px;
   border: 2px solid var(--line); border-radius: var(--r); background: #fff; color: var(--ink); text-align: left;
 }
 .parent-line span { flex: 1; }
+/* Liste des blocages liés à un blocus ; ligne rouge si un problème y est signalé. */
 .link-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .link-row {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 11px;
@@ -746,22 +1044,28 @@ details.more[open] summary::before { content: '– '; }
 .link-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .link-main span { font-size: 13px; color: var(--muted); }
 .link-row.has-problem .link-main span { color: #b3141b; font-weight: 600; }
+/* Petit rond d'état de chaque blocage lié. */
 .link-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: #5B6770; }
 .link-dot.st-tenu { background: var(--green); }
 .link-dot.st-leve { background: var(--red); }
+/* Case à cocher dessinée (carré) dans une ligne de choix ; remplie de violet si cochée. */
 .pick-check { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border: 2px solid var(--line); border-radius: 6px; background: #fff; color: #fff; }
 .pick-row.on .pick-check { background: var(--violet); border-color: var(--violet); }
+/* Quand la ligne est un <button> : on annule les styles de bouton du navigateur. */
 button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink); }
 
 /* ---------- Alerte police / CRS : épingle bleue qui clignote ---------- */
+/* Bouton bleu « Police ». */
 .btn-police { background: #1546E0; color: #fff; }
 .btn-police:hover { background: #0f38b8; }
+/* steps(1, end) : pas de fondu, l'épingle saute d'une couleur à l'autre, comme un gyrophare. */
 .pin-police .pin-head { animation: police-blink 0.9s steps(1, end) infinite; }
 .pin-police .pin-head::after { animation-duration: 0.9s; }
 @keyframes police-blink {
   0% { background: #1546E0; box-shadow: 0 0 0 3px rgba(21,70,224,0.45), 0 0 14px 4px rgba(21,70,224,0.7); }
   50% { background: #5C8BFF; box-shadow: 0 0 0 3px rgba(92,139,255,0.25), -2px 3px 7px rgba(0,0,0,0.35); }
 }
+/* Contrôle segmenté du niveau d'alerte : rouge, ou bleu pour la police. */
 .seg-alert { border-color: var(--red); margin-bottom: 2px; }
 .seg-alert .seg-btn { color: var(--red); }
 .seg-alert .seg-btn.on { background: var(--red); color: #fff; }
@@ -769,17 +1073,21 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .seg-alert.seg-police .seg-btn { color: #1546E0; }
 .seg-alert.seg-police .seg-btn.on { background: #1546E0; color: #fff; }
 
+/* Complète la règle .chip définie plus haut (icône + texte alignés). */
 .chip { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ---------- Matériel à prévoir ---------- */
+/* Saisie du matériel : champ + bouton « Ajouter » (1fr auto = le champ prend le reste). */
 .material-pick { display: flex; flex-direction: column; gap: 8px; }
 .material-add { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .material-add .btn { min-height: 48px; padding: 0 14px; }
 .material .field-label { display: flex; align-items: center; gap: 6px; }
+/* Matériel listé en petites pilules ; dans l'agenda, une seule ligne tronquée par « … ». */
 .material-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .material-list li { padding: 5px 11px; border-radius: 999px; background: var(--violet-tint); color: var(--ink); font-weight: 600; font-size: 14px; }
 .ev-material { display: flex; align-items: center; gap: 5px; font-size: 12.5px; opacity: 0.9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Engagements « j'apporte » : en-tête, lignes de matériel (orange si personne ne l'apporte). */
 .pledges { display: flex; flex-direction: column; gap: 12px; }
 .pledge-head { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
 .pledge-head .field-hint { display: block; margin-top: 2px; }
@@ -792,11 +1100,14 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .material-main span { font-size: 13px; color: var(--muted); }
 .material-row.missing .material-main span { color: #b45309; font-weight: 600; }
 .material-row .btn { flex: none; min-height: 38px; padding: 0 10px; font-size: 15px; }
+/* Redéfinit l'écart de .ev-material (plus haut dans cette section). */
 .ev-material { gap: 12px !important; }
 .ev-material > span { display: inline-flex; align-items: center; gap: 4px; }
 
 /* ---------- Mes engagements (visibles par moi seul) ---------- */
+/* Épingle d'un point où je vais : double anneau blanc + violet. */
 .pin-going .pin-head { box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--violet), -2px 3px 9px rgba(0,0,0,0.4); }
+/* Petit rond « moi » en bas à droite de l'épingle ; couleurs inversées si j'apporte du matériel. */
 .pin-me {
   position: absolute; right: -7px; bottom: 6px; width: 20px; height: 20px; border-radius: 50%;
   display: grid; place-items: center; background: var(--violet); color: #fff;
@@ -807,28 +1118,36 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .pin-providing .pin-me .ico { color: var(--violet); }
 
 /* ---------- Liste des appareils : recherche et filtre ---------- */
+/* Recherche / filtre de la liste des appareils (affichés au-delà de 5 appareils). */
 .dev-tools { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
 
+/* « J'arrive plus tard » ; .is-current entoure le bouton du choix actuel. */
 .arrive-later { display: flex; flex-direction: column; gap: 8px; }
 .btn.is-current { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--violet); }
 
 /* ---------- Flash : événement improvisé, avec un petit éclair ---------- */
+/* Contrôle segmenté à 3 choix, libellé sous l'icône ; le dernier (Flash), actif, est noir et jaune. */
 .seg-3 { grid-auto-columns: minmax(0, 1fr); }
 .seg-3 .seg-btn { flex-direction: column; gap: 3px; min-height: 58px; padding: 6px 2px; font-size: 16px; line-height: 1; white-space: nowrap; }
 .seg-3 .seg-btn.on:last-child { background: var(--ink); color: var(--yellow); }
+/* Petit éclair jaune en haut à gauche de l'épingle d'un flash. */
 .pin-zap {
   position: absolute; left: -6px; top: -6px; width: 18px; height: 18px; border-radius: 50%;
   display: grid; place-items: center; z-index: 2;
   background: var(--yellow); color: #00232C;
   border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.35);
 }
+/* !important : ces icônes doivent rester foncées même si une règle plus précise les colore. */
 .pin-zap .ico, .ev-flash .ico, .tag-flash .ico { color: #00232C !important; }
 /* Épingle d'un flash : la couleur du type en plus sombre, l'icône du type en jaune. */
 .pin-flash .pin-head { background: color-mix(in srgb, var(--c) 55%, #000); }
 .pin-flash .pin-head .ico { color: var(--yellow); }
 /* Même chose pour la carte d'un flash dans l'agenda. */
+/* !important nécessaire : la couleur de fond de la carte est écrite en ligne (style="...") par
+   le JavaScript, et seul !important passe devant un style en ligne. */
 .ev-card.is-flash { background: color-mix(in srgb, var(--c) 55%, #000) !important; color: #fff !important; }
 .ev-card.is-flash .ev-ico .ico { color: var(--yellow); }
+/* Anneau jaune pulsé autour d'un flash ; étiquettes « Flash » jaunes. */
 .pin-flash .pin-head::after {
   content: ''; position: absolute; inset: -7px; border-radius: 50%;
   border: 3px solid var(--yellow); animation: pulse 1.3s ease-out infinite;
@@ -837,22 +1156,29 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .tag-flash { background: var(--yellow); color: #00232C; }
 .flash-section .section-title .ico { color: var(--ink); }
 
+/* Choix du genre d'événements affichés dans l'agenda. */
 .agenda-kind { margin: 4px 0 2px; }
 
 /* Bouton sur deux lignes : l action, puis le nom (coupé si trop long). */
 .btn-two { min-width: 0; padding-top: 6px; padding-bottom: 6px; }
 .btn-two-text { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.1; }
 .btn-two-text small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font); font-weight: 600; font-size: 13px; text-transform: none; letter-spacing: 0; opacity: 0.8; }
+/* Texte de la bulle du trajet tronqué par « … ». */
 .route-hint-text { overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- Écrans étroits : rien ne doit dépasser en largeur ---------- */
+/* Anti-débordement : chaque segment ou bouton peut rétrécir (min-width: 0) et son texte se
+   tronque ; max-width: 100% : un bouton n'est jamais plus large que son parent.
+   Ces règles complètent celles du début (même sélecteur : la dernière gagne). */
 .seg { grid-auto-columns: minmax(0, 1fr); }
 .seg-btn { min-width: 0; }
 .seg-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn { max-width: 100%; }
 .btn-block { white-space: normal; line-height: 1.1; text-align: center; }
+/* Les enfants des grilles peuvent rétrécir (sinon un mot long élargit toute la colonne). */
 .grid-2 > *, .grid-3 > * { min-width: 0; }
 .grid-2 .btn { padding-left: 10px; padding-right: 10px; }
+/* Très petits écrans : segments et grands boutons plus serrés. */
 @media (max-width: 380px) {
   .seg-btn { font-size: 15px; padding: 0 4px; gap: 4px; }
   .btn-big { font-size: 17px; }
@@ -862,6 +1188,8 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* Événement : carré arrondi posé sur une petite pointe (le point fixe garde la goutte). */
 .pin-event .pin-head { border-radius: 10px; transform: none; top: 1px; }
 .pin-event .pin-head .ico { transform: none; }
+/* ::before dessine la petite pointe : un carré du même fond (inherit) avec bordures blanches
+   à droite et en bas, tourné de 45° : on n'en voit que le coin du bas, sous la tête. */
 .pin-event .pin-head::before {
   content: ''; position: absolute; left: 50%; bottom: -8px; width: 11px; height: 11px;
   background: inherit; border-right: 2.5px solid #fff; border-bottom: 2.5px solid #fff;
@@ -872,12 +1200,16 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .fchip-event i { border-radius: 3px; }
 
 /* ---------- Filtres de la carte : icônes (et texte sur grand écran) ---------- */
+/* Libellé court (.fchip-short) caché par défaut, montré sur téléphone. Icônes grises si le
+   filtre est inactif, couleur du type s'il est actif.
+   :not(.on):not(.fchip-today) = filtres inactifs, sauf « Aujourd'hui ». */
 .fchip-short { display: none; }
 .fchip .ico { color: #b5b5b5; flex: none; }
 .fchip.on .ico { color: var(--c); }
 .fchip-today .ico { color: var(--muted); }
 .fchip-today.on .ico { color: var(--yellow); }
 .fchip:not(.on):not(.fchip-today) { opacity: 0.75; }
+/* Téléphone (<= 600px) : pastilles en colonne, icône au-dessus et nom court en dessous. */
 @media (max-width: 600px) {
   /* Sur téléphone : l'icône, et son nom en petit dessous (l'icône seule n'était pas assez claire). */
   .map-filters { gap: 5px; }
@@ -891,6 +1223,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 }
 
 /* ---------- Notifications : une vraie icône, une couleur par genre d'alerte ---------- */
+/* Rond d'icône dans une notification ; une couleur par genre (erreur, alerte, police, flash). */
 .toast-ico { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.18); }
 .toast-ico .ico { color: inherit; }
 .toast-err .toast-ico .ico { color: #fff; }
@@ -901,15 +1234,18 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .toast-flash .toast-ico { background: var(--yellow); }
 .toast-flash .toast-ico .ico { color: #00232C; }
 
+/* Infobulle d'épingle : icône + texte alignés. */
 .tip-line { display: inline-flex; align-items: center; gap: 5px; }
 
 /* Notification cliquable : elle mène au point. */
 .toast-link { pointer-events: auto; cursor: pointer; border: 0; width: 100%; text-align: left; font: inherit; font-weight: 600; font-size: 14.5px; }
+/* Le texte (2e enfant) prend toute la place ; la flèche « aller » reste à droite. */
 .toast-link > span:nth-child(2) { flex: 1; }
 .toast-go { display: grid; place-items: center; flex: none; opacity: 0.8; }
 .toast-go .ico { color: inherit; }
 
 /* ---------- Fiche : à combien je suis du point ---------- */
+/* Distance et temps jusqu'au point, sur plusieurs lignes si besoin. */
 .how-far { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .how-far-res { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
 .how-far-item { display: inline-flex; align-items: center; gap: 5px; font-size: 14.5px; }
@@ -917,9 +1253,13 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .how-far-wait { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
 
 /* « Toujours là » verrouillé : visible mais inactif. */
+/* Redéfinit .btn:disabled du début (opacité 0.45 devient 0.55) : c'est cette valeur qui s'applique. */
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* ---------- Bouton Réglages, à côté du profil ---------- */
+/* Bouton rond des réglages dans la barre du haut, poussé à droite (margin-left: auto).
+   S'il est suivi de la pastille « moi » (sélecteur +), celle-ci se colle à 8px au lieu de
+   se pousser elle aussi. */
 .settings-btn {
   margin-left: auto; display: grid; place-items: center; width: 40px; height: 40px; flex: none;
   border: 0; border-radius: 50%; background: rgba(255,255,255,0.14); color: #fff;
@@ -929,6 +1269,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .settings-btn + .me-chip { margin-left: 8px; }
 
 /* Filtre « Blocus » : actif = couleur des blocus. */
+/* Filtre Blocus actif : bordeaux. */
 .fchip-blocus.on { background: #5C1033; color: #fff; }
 .fchip-blocus.on .ico { color: #fff; }
 @media (max-width: 600px) {
@@ -937,6 +1278,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 }
 
 /* ---------- Équipe : espaces de chaque appareil ---------- */
+/* Étiquettes des espaces d'un appareil : Campagne (violet), Mouvement (noir), propriétaire (rouge). */
 .row-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
 .space-tag { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
 .space-lfi { background: #7B13D6; color: #fff; }
@@ -946,6 +1288,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* ==========================================================================
    Bascule d'espace (LFI / Mvt), pour qui a accès aux deux
    ========================================================================== */
+/* Interrupteur Campagne / Mouvement dans la barre du haut (pilule à deux boutons). */
 .space-switch {
   display: inline-flex; flex: none; padding: 3px; gap: 2px; border-radius: 999px;
   background: rgba(255,255,255,0.14);
@@ -955,8 +1298,11 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
   padding: 5px 11px; font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;
 }
 .space-switch button.on { background: #fff; color: var(--ink); }
+/* Quand la bascule existe, c'est elle qui est poussée à droite ; les réglages se collent alors
+   à elle. « ~ » = n'importe quel frère qui suit (pas seulement le suivant immédiat). */
 .topbar .space-switch + .toptabs, .topbar .space-switch { margin-left: auto; }
 .topbar .space-switch ~ .settings-btn { margin-left: 8px; }
+/* <= 420px : on cache le sous-titre du logo pour gagner de la place. */
 @media (max-width: 420px) {
   .brand-text small { display: none; }
   .space-switch button { padding: 5px 9px; }
@@ -965,12 +1311,15 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* ==========================================================================
    Écrans d'accès : neutres (aucune couleur ni référence de l'un ou l'autre espace)
    ========================================================================== */
+/* Redéfinit le fond de .splash (le violet du début n'est donc jamais visible) : gris
+   anthracite neutre, pour qu'un écran d'accès ne révèle pas à quel espace on appartient. */
 .splash {
   background:
     repeating-linear-gradient(-55deg, rgba(255,255,255,0.025) 0 18px, transparent 18px 36px),
     radial-gradient(120% 80% at 0% 0%, #3a3f46 0%, transparent 60%),
     linear-gradient(160deg, #24272c 0%, #111316 100%);
 }
+/* Étapes, bouton jaune et logo repassés en blanc / gris. */
 .splash-step { border-left-color: #fff; background: rgba(255,255,255,0.07); }
 .splash-step span { color: #fff; }
 .splash .btn-yellow { background: #fff; color: #111316; }
@@ -982,6 +1331,10 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
    noir, blanc, rouge sang ; titres condensés (Fjalla One), menus en capitales
    (Lato Black), texte de lecture à empattements (PT Serif). Coins nets.
    ========================================================================== */
+/* 12. THÈME MOUVEMENT. :root[data-space='mvt'] ne s'applique que lorsque le JavaScript
+   (store.ts, main.ts) écrit data-space="mvt" sur la balise <html>. On ne redéfinit que les
+   VARIABLES : toutes les règles qui lisent var(--violet), var(--font)... changent d'aspect
+   d'un coup. :root + [attribut] pèse plus que :root seul : ces valeurs gagnent toujours. */
 :root[data-space='mvt'] {
   --violet: #a30006;
   --violet-dark: #7d0005;
@@ -993,20 +1346,28 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
   --muted: #6a6a6a;
   --line: #ddd8d4;
   --panel: #f7f4f2;
+  /* Polices Lato (texte), Fjalla One (titres), PT Serif (lecture), embarquées par main.ts.
+     --font-read n'existe que dans ce thème : les règles qui l'utilisent ailleurs prévoient un repli. */
   --font: 'Lato', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-title: 'Fjalla One', 'Arial Narrow', sans-serif;
   --font-read: 'PT Serif', Georgia, serif;
+  /* Coins presque droits (2px / 4px) : style journal. */
   --r: 2px;
   --r-lg: 4px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
   font-synthesis: none; /* Fjalla One n'a qu'une graisse : pas de faux gras */
 }
+/* Contour de focus rouge plutôt que jaune. */
 :root[data-space='mvt'] :focus-visible { outline-color: var(--violet); }
 
 /* Bandeau sombre, liseré rouge */
+/* Règles préfixées [data-space='mvt'] : elles ne visent que l'espace Mouvement.
+   Bandeau noir avec liseré rouge (ombre sans flou de 3px), logo rouge non penché. */
 [data-space='mvt'] .topbar { background: #1b1b1b; box-shadow: 0 3px 0 var(--violet); }
 [data-space='mvt'] .brand-mark { background: var(--violet); color: #fff; transform: none; border-radius: 2px; }
 [data-space='mvt'] .brand-text strong { font-weight: 400; letter-spacing: 0.02em; }
+/* Sous-titre du logo en étiquette blanche sur rouge ; align-self: flex-start : l'étiquette
+   prend la largeur du texte au lieu de s'étirer. */
 [data-space='mvt'] .brand-text small {
   align-self: flex-start; background: var(--violet); color: #fff; opacity: 1;
   padding: 2px 6px 1px; font-weight: 900; letter-spacing: 0.08em;
@@ -1015,10 +1376,12 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 [data-space='mvt'] .space-switch button.on { color: var(--violet); }
 
 /* Titres : condensés, soulignés de rouge (au lieu du surligneur jaune) */
+/* box-shadow inset en bas = soulignement épais qui ne décale rien. */
 [data-space='mvt'] .panel-title {
   font-weight: 400; color: #141414; background: none; padding: 0 0 4px; margin-left: 0;
   box-shadow: inset 0 -3px 0 var(--violet);
 }
+/* Fjalla One n'a qu'une graisse (400) : on la demande explicitement pour éviter le faux gras. */
 [data-space='mvt'] .sheet-title,
 [data-space='mvt'] .section-title,
 [data-space='mvt'] .detail-title,
@@ -1026,6 +1389,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 [data-space='mvt'] .splash-title { font-weight: 400; }
 
 /* Menus et boutons : capitales très grasses */
+/* Police Lato écrite en dur (et non var(--font-title), qui vaut Fjalla pour les titres). */
 [data-space='mvt'] .navbtn,
 [data-space='mvt'] .btn,
 [data-space='mvt'] .seg-btn,
@@ -1046,9 +1410,12 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 [data-space='mvt'] .tag:not(.tag-outline):not(.tag-flash) { border-radius: 0; }
 [data-space='mvt'] .tag-outline { border-radius: 0; border-color: #141414; color: #141414; }
 [data-space='mvt'] .agenda-day-title.today { color: var(--violet); }
+/* .chip.on:not([style]) : puce active SANS attribut style en ligne ; les puces colorées par
+   le JS (couleur du type) gardent leur couleur. */
 [data-space='mvt'] .chip { border-radius: 2px; }
 [data-space='mvt'] .chip.on:not([style]) { background: #141414; border-color: #141414; color: #fff; }
 [data-space='mvt'] .fchip { border-radius: 4px; }
+/* Couleurs des icônes de conseils adaptées au thème. */
 [data-space='mvt'] .tip-add { background: var(--violet); }
 [data-space='mvt'] .tip-agenda { background: #141414; }
 [data-space='mvt'] .tip-route { background: #5C1033; }
@@ -1064,12 +1431,15 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
   .settings-btn + .me-chip { margin-left: 6px; }
 }
 @media (max-width: 360px) {
+  /* :has() = « qui contient » : seulement si la barre du haut contient la bascule d'espace, on
+     cache le nom de l'app sous 360px. Sélecteur récent (Safari 15.4+, Chrome 105+). */
   .topbar:has(.space-switch) .brand-text { display: none; }
 }
 
 /* ==========================================================================
    Votes en AG (façon Kahoot)
    ========================================================================== */
+/* 13. Liste des votes d'une AG : cartes, statut ouvert / fermé, actions. */
 .votes { display: flex; flex-direction: column; gap: 10px; }
 .vote-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .vote-item { background: #fff; border: 2px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -1082,13 +1452,18 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .vote-done { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--green); font-size: 14px; }
 .vote-total { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; color: var(--ink-soft); }
 .vote-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+/* Barre de résultat en grille à zones nommées : ligne 1 = libellé | nombre ; ligne 2 = la
+   barre (track) sur les deux colonnes. tabular-nums : chiffres de même largeur (pas de saut). */
 .vote-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'label num' 'track track'; gap: 2px 8px; }
 .vote-bar-label { grid-area: label; display: inline-flex; align-items: center; gap: 4px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vote-bar-num { grid-area: num; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .vote-bar-track { grid-area: track; height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+/* Remplissage : sa largeur (width: X%) est posée par le JS et animée par la transition.
+   .top = option en tête (violet), .mine = mon choix. */
 .vote-bar-fill { display: block; height: 100%; background: var(--ink-soft); border-radius: 999px; transition: width 0.4s; }
 .vote-bar.top .vote-bar-fill { background: var(--violet); }
 .vote-bar.mine .vote-bar-label { color: var(--violet); }
+/* Édition des options ; boutons de choix. */
 .vote-options-edit { display: flex; flex-direction: column; gap: 6px; }
 .vote-option-edit { display: flex; align-items: center; gap: 6px; }
 .vote-choices { display: flex; flex-direction: column; gap: 8px; }
@@ -1098,6 +1473,8 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .kahoot { display: flex; flex-direction: column; gap: 14px; text-align: center; }
 .kahoot-question { margin: 0; font-family: var(--font-title); font-size: 26px; line-height: 1.1; text-transform: uppercase; }
 .kahoot-code { display: flex; justify-content: center; gap: 8px; }
+/* Chaque chiffre du code dans une case ; tailles en min(vw, px) : elles suivent l'écran
+   sans dépasser un plafond. */
 .kahoot-code span {
   display: grid; place-items: center; width: min(16vw, 72px); height: min(20vw, 92px);
   background: var(--ink); color: #fff; border-radius: var(--r-lg);
@@ -1110,15 +1487,19 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .kahoot-footer { width: 100%; }
 
 /* Page publique : voter avec le code */
+/* Page publique de vote (sur le fond sombre de .splash) : bouton à contour blanc, saisie du
+   code en grand avec des chiffres très espacés. */
 .btn-outline-light { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,0.6); }
 .btn-outline-light:hover { background: rgba(255,255,255,0.08); }
 .pv { display: flex; flex-direction: column; gap: 18px; }
 .pv-code { text-align: center; letter-spacing: 0.45em; font-size: 32px !important; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* Message d'erreur, nom de l'AG, question, choix, retour. */
 .pv-error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; background: rgba(245,59,59,0.18); border-left: 4px solid #f53b3b; border-radius: 4px; }
 .pv-ag { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.75; font-weight: 700; }
 .pv-question { font-size: clamp(30px, 8vw, 44px); }
 .pv-choices { display: flex; flex-direction: column; gap: 10px; }
 .pv-back { color: #fff; opacity: 0.8; align-self: center; }
+/* Résultats sur fond sombre : barres en blanc translucide. */
 .pv-result .vote-bars { color: #fff; }
 .pv-result .vote-bar-num { color: rgba(255,255,255,0.75); }
 .pv-result .vote-bar-track { background: rgba(255,255,255,0.18); }
@@ -1128,6 +1509,8 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* ==========================================================================
    Archive
    ========================================================================== */
+/* Frise par mois ; cartes (pointillés pour un enregistrement) ; icône ; visibilité
+   publique / privée ; image ; texte limité à 6 lignes (.clamped) ; fichier joint ; actions. */
 .arch-timeline { display: flex; flex-direction: column; gap: 10px; }
 .arch-month { margin: 8px 0 0; font-family: var(--font-title); font-size: 20px; text-transform: uppercase; color: var(--ink-soft); border-bottom: 2px solid var(--line); padding-bottom: 4px; }
 .arch-card { background: #fff; border: 2px solid var(--line); border-radius: var(--r); padding: 12px; display: flex; flex-direction: column; gap: 8px; color: var(--ink); text-align: left; }
@@ -1152,6 +1535,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 .arch-pick { width: 100%; }
 
 /* Page publique */
+/* Page publique (sans compte) : onglets, carte, liste des AG, en blanc sur fond sombre. */
 .splash-public { display: flex; flex-direction: column; gap: 10px; }
 .splash-wide .splash-inner { max-width: 640px; }
 .pub { display: flex; flex-direction: column; gap: 16px; }
@@ -1172,28 +1556,39 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 /* ==========================================================================
    Chat chiffré
    ========================================================================== */
+/* La vue Chat occupe 100 % du panneau (height) : la liste des messages prend la place
+   restante (flex: 1) et la zone de saisie reste en bas. */
 .panel-view.panel-chat.on { height: 100%; padding-bottom: 10px; gap: 10px; }
 .chat-e2e { display: flex; align-items: center; gap: 6px; margin: -6px 0 0; font-size: 12.5px; color: var(--muted); }
+/* :empty : la ligne d'état est cachée quand elle ne contient rien. */
 .chat-status:empty { display: none; }
+/* Liste des messages : elle seule défile ; au moins 220px de haut. */
 .chat-list { list-style: none; margin: 0; padding: 4px 2px; flex: 1; min-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .chat-day { align-self: center; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 8px 0 2px; }
 .chat-older { align-self: center; }
 .chat-empty { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; color: var(--muted); max-width: 260px; }
+/* Un message : à gauche ; les miens (.mine) poussés à droite (align-self: flex-end), en
+   violet. Bulle aux coins arrondis sauf celui du côté de l'auteur. */
 .chat-msg { display: flex; flex-direction: column; align-items: flex-start; max-width: 85%; }
 .chat-msg.mine { align-self: flex-end; align-items: flex-end; }
 .chat-from { font-size: 12px; font-weight: 700; color: var(--ink-soft); margin: 0 6px 2px; }
 .chat-bubble { padding: 8px 12px; border-radius: 14px 14px 14px 4px; background: #fff; border: 1px solid var(--line); color: var(--ink); }
 .chat-msg.mine .chat-bubble { border-radius: 14px 14px 4px 14px; background: var(--violet); border-color: var(--violet); color: #fff; }
+/* pre-wrap garde les retours à la ligne ; overflow-wrap: anywhere coupe les liens trop longs. */
 .chat-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Message non déchiffrable, position partagée, heure, bouton supprimer. */
 .chat-locked { display: inline-flex; align-items: center; gap: 6px; font-style: italic; font-size: 13px; opacity: 0.8; }
 .chat-loc { display: inline-flex; align-items: center; gap: 8px; }
 .chat-loc .ico { color: inherit; }
 .chat-msg.mine .chat-loc .btn { background: rgba(255,255,255,0.2); color: #fff; }
 .chat-meta { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); margin: 2px 6px 0; }
 .chat-del { border: 0; background: none; color: var(--muted); padding: 2px; display: inline-grid; }
+/* Zone de saisie collée en bas du panneau (sticky), avec le fond du panneau pour masquer
+   les messages qui passent dessous. */
 .chat-compose { display: flex; align-items: flex-end; gap: 6px; position: sticky; bottom: 0; background: var(--panel); padding-top: 6px; }
 .chat-input { flex: 1; min-height: 44px; max-height: 140px; resize: none; }
 .chat-send { flex: none; width: 46px; min-height: 46px; padding: 0; }
+/* Membres du chat et leur code de vérification (police à chasse fixe). */
 .chat-members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .chat-members li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 2px solid var(--line); border-radius: var(--r); background: #fff; }
 .chat-code { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 15px; letter-spacing: 0.06em; color: var(--ink); }
@@ -1206,6 +1601,7 @@ button.pick-row { width: 100%; text-align: left; font: inherit; color: var(--ink
 @media (max-width: 899.98px) {
   /* Trajet : la liste prend toute la place du panneau (c'est lui qui défile). */
   .app[data-panel='route'] .pick-list { max-height: none; }
+  /* Lignes de la liste plus hautes : plus faciles à toucher. */
   .pick-row { min-height: 60px; }
 }
 
@@ -1224,6 +1620,7 @@ input[type='date'].input, input[type='time'].input {
   -webkit-appearance: none; appearance: none; display: block; width: 100%; max-width: 100%;
   min-height: 48px; text-align: left; background-color: #fff;
 }
+/* Pseudo-élément propre à Safari qui contient la valeur affichée : aligné à gauche. */
 input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input::-webkit-date-and-time-value { text-align: left; margin: 0; }
 
 /* Côté Mouvement : fond de carte neutre (pas de lilas LFI). */
@@ -1233,73 +1630,91 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
    Page d'accueil publique (sans compte) — style Mouvement
    bandeau noir à liseré rouge, page « papier », titres condensés soulignés de rouge
    ========================================================================== */
+/* Page d'accueil publique : fond « papier » (var(--panel)), contenu centré sur 880px au plus. */
 .home-page { min-height: 100dvh; background: var(--panel); color: var(--ink); }
+/* Bandeau collé en haut (sticky) devant tout (z-index 1000) ; il inclut la zone de l'encoche. */
 .home-band { background: #1b1b1b; color: #fff; box-shadow: 0 3px 0 var(--violet); padding: calc(10px + var(--safe-t)) 16px 10px; position: sticky; top: 0; z-index: 1000; }
 .home-top { max-width: 880px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .home-top-actions { display: flex; gap: 8px; }
+/* Boutons du bandeau : contour blanc, ou plein rouge. */
 .btn-band { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,0.45); }
 .btn-band:hover { background: rgba(255,255,255,0.08); }
 .btn-band-solid { background: var(--violet); color: #fff; }
 .btn-band-solid:hover { background: var(--violet-dark); }
 .btn-band .ico, .btn-band-solid .ico { color: inherit; }
+/* Contenu de la page : colonne aux grands espacements ; en bas, marge + barre d'accueil iPhone. */
 .home { max-width: 880px; margin: 0 auto; padding: 28px 16px calc(44px + var(--safe-b)); display: flex; flex-direction: column; gap: 34px; }
 .home-hero { display: flex; flex-direction: column; gap: 12px; }
+/* Grand titre (taille fluide grâce à clamp), chapeau en police à empattements. */
 .home-title { margin: 0; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: clamp(44px, 11vw, 80px); line-height: 0.95; color: #141414; }
 .home-lead { margin: 0; max-width: 580px; font-family: var(--font-read, serif); font-size: 18px; color: var(--ink-soft); }
 .home-section { display: flex; flex-direction: column; gap: 14px; }
+/* Intertitre souligné de rouge (ombre inset). */
 .home-h2 { margin: 0; align-self: flex-start; display: flex; align-items: center; gap: 10px; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: 28px; color: #141414; padding-bottom: 4px; box-shadow: inset 0 -3px 0 var(--violet); }
 .home-h2 .ico { color: var(--violet); }
 .home-loading { margin: 0; color: var(--muted); }
 .home-empty { display: flex; align-items: center; gap: 10px; padding: 16px; border: 2px dashed var(--line); border-radius: var(--r-lg); color: var(--muted); font-family: var(--font-read, serif); }
 .home-empty .ico { color: var(--muted); }
+/* Carte de base de la page d'accueil ; .home-vote : bord gauche épais noir. */
 .home-card { background: #fff; color: #141414; border: 2px solid var(--line); border-radius: var(--r-lg); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
 .home-meta { font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; color: var(--violet); }
 .home-q { margin: 0; font-family: var(--font-title); font-weight: 400; text-transform: uppercase; font-size: 25px; line-height: 1.05; }
 .home-votes { display: grid; gap: 12px; }
 .home-vote { border-color: #141414; border-left-width: 6px; }
 .home-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Boutons de vote : flex: 1 1 140px = base de 140px, ils s'élargissent pour remplir et passent
+   à la ligne quand la place manque. */
 .home-choices .btn { flex: 1 1 140px; min-height: 52px; font-size: 17px; background: #141414; color: #fff; }
 .home-choices .btn:hover { background: var(--violet); }
+/* Confirmation « vous avez voté », en vert. */
 .home-voted { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: var(--r); background: #e8f5ee; color: #0B6E4F; font-weight: 700; }
 .home-voted .ico { color: inherit; flex: none; margin-top: 2px; }
 .home-fine { font-size: 12.5px; color: var(--muted); }
+/* Carte publique de la page d'accueil (cette règle s'étend sur trois lignes). */
 .home-map { height: 300px; border-radius: var(--r-lg); overflow: hidden; border: 2px solid var(--line);
   /* La carte reste SOUS le bandeau collé en haut quand on fait défiler la page. */
   position: relative; z-index: 0; isolation: isolate; }
 .home-map:focus, .home-map:focus-visible { outline: none; border-color: var(--violet); }
 .home-ags { display: flex; flex-direction: column; gap: 12px; }
 .home-ag-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+/* Liste des AG : bloc date (jour en grand, mois en dessous) à gauche du texte. */
 .home-ag { flex-direction: row; align-items: flex-start; gap: 14px; }
 .home-ag-date { flex: none; width: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 0; border-radius: var(--r); background: var(--violet); color: #fff; }
 .home-ag-date strong { font-family: var(--font-title); font-weight: 400; font-size: 30px; line-height: 1; }
 .home-ag-date span { font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; }
 .home-ag-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .home-desc { margin: 0; color: var(--ink-soft); font-family: var(--font-read, serif); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Lien « voir plus », archive, pied de page. */
 .home-link { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; font-weight: 900; color: var(--violet); text-decoration: none; margin-top: 4px; }
 .home-link .ico { color: inherit; }
 .home-archive { display: flex; flex-direction: column; gap: 10px; }
 .home-more { align-self: center; }
 .home-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding-top: 18px; border-top: 2px solid var(--line); font-family: var(--font-read, serif); }
 .home-foot p { margin: 0; }
+/* Les étapes du splash réutilisées sur la page d'accueil, en version claire. */
 .home-steps .splash-step { background: var(--violet-tint); border-left-color: var(--violet); color: #141414; }
 .home-steps .splash-step span { color: var(--violet); }
+/* <= 560px : boutons du bandeau réduits à leur icône (texte caché). */
 @media (max-width: 560px) {
   .home-top-actions .btn span { display: none; }
   .home-top-actions .btn { width: 42px; padding: 0; }
   .home-q { font-size: 22px; }
   .home-map { height: 230px; }
 }
+/* Ordinateur : votes en colonnes d'au moins 340px (auto-fit : autant que la place le permet). */
 @media (min-width: 900px) {
   .home-votes { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
 }
 
 /* Votes sans compte : indicatifs */
 .home-vote-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+/* cursor: help : curseur en point d'interrogation au survol du badge. */
 .home-badge { padding: 2px 8px; border-radius: 4px; background: #fff4d6; color: #8a5a00; border: 1px solid #f0c96a; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; cursor: help; }
 .vote-indicatif { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 0; padding: 8px 10px; border-radius: var(--r); background: #fff4d6; color: #6b4600; font-size: 13px; }
 .vote-indicatif .ico { color: inherit; flex: none; margin-top: 1px; }
 
 /* Écran du code : vote déjà sur la page d'accueil (code facultatif) */
+/* Encadré vert « vote aussi ouvert sur la page d'accueil », puis code en petit. */
 .kahoot-open { display: flex; align-items: flex-start; gap: 12px; text-align: left; padding: 12px 14px; border-radius: var(--r-lg); background: #e8f5ee; color: #0B6E4F; }
 .kahoot-open .ico { color: inherit; flex: none; margin-top: 2px; }
 .kahoot-open div { display: flex; flex-direction: column; gap: 2px; }
@@ -1312,16 +1727,19 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
 /* ==========================================================================
    Accès rapide aux votes : bandeau de l'Agenda, badge sur l'épingle
    ========================================================================== */
+/* Bandeau des votes ouverts en haut de l'Agenda : votes séparés par un trait. */
 .votes-banner { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 2px solid var(--violet); border-radius: var(--r-lg); background: #fff; }
 .votes-banner .section-title { margin: 0; color: var(--violet); }
 .votes-banner-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .votes-banner-item { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--line); }
 .votes-banner-item:first-child { border-top: 0; padding-top: 0; }
+/* flex: 1 1 180px : le texte prend la place ; les actions passent dessous sous 180px. */
 .vb-main { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; }
 .vb-ag { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .vb-ag em { font-style: normal; color: #8a5a00; }
 .vb-meta { font-size: 12.5px; color: var(--muted); }
 .vb-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+/* Petit badge « vote » en bas à gauche de l'épingle, qui grossit doucement en boucle. */
 .pin-vote {
   position: absolute; left: -6px; bottom: 6px; width: 20px; height: 20px; border-radius: 50%;
   display: grid; place-items: center; z-index: 2;

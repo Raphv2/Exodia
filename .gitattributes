@@ -1,5 +1,10 @@
 # Auto detect text files and perform LF normalization
+# « * text=auto » : Git repère les fichiers texte et les stocke dans le dépôt avec des fins
+# de ligne Unix (LF) ; sous Windows, il peut les remettre en CRLF dans la copie de travail.
 * text=auto
 # Fichiers exécutés sur le serveur Linux : toujours en fins de ligne Unix.
+# Scripts shell : toujours LF, même extraits sous Windows (sinon bash échoue sur le
+# caractère retour-chariot de fin de ligne).
 *.sh text eol=lf
+# Tout le dossier deploy (services systemd, Caddyfile) : LF aussi, pour la même raison.
 deploy/* text eol=lf

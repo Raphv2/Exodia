@@ -1,35 +1,59 @@
+# Service systemd : fait tourner Terrain en permanence, le relance s'il plante et le
+# démarre avec la machine. install.sh (et update.sh) le copient dans /etc/systemd/system/
+# en remplaçant le marqueur de domaine par le vrai domaine.
+# Commandes utiles : systemctl status terrain ; journalctl -u terrain -f
+#
+# [Unit] : description et ordre de démarrage.
 [Unit]
 Description=Terrain (carte militante)
+# Démarrer une fois le réseau réellement prêt (After), et demander qu'il le soit (Wants).
 After=network-online.target
 Wants=network-online.target
 
+# [Service] : comment lancer le programme.
 [Service]
+# simple : le processus lancé par ExecStart EST le service (il ne passe pas en arrière-plan).
 Type=simple
+# Compte système dédié « terrain », sans mot de passe ni shell (créé par install.sh).
 User=terrain
 Group=terrain
+# Dossier du code (le dépôt cloné depuis GitHub).
 WorkingDirectory=/opt/terrain
+# Variables lues par server/index.ts : mode production ; écoute uniquement en local
+# (127.0.0.1, Caddy est devant) ; port ; adresse publique (utilisée dans les liens
+# d'invitation) ; confiance au proxy ; dossier des données (base SQLite + photos).
 Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
 Environment=PORT=3180
 Environment=PUBLIC_URL=https://__DOMAIN__
 Environment=TRUST_PROXY=1
 Environment=DATA_DIR=/var/lib/terrain
+# Lancement : Node exécute le TypeScript grâce à tsx ; l'avertissement de node:sqlite est masqué.
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning --import tsx server/index.ts
+# Relance automatique, quelle que soit la cause de l'arrêt, après 3 secondes.
 Restart=always
 RestartSec=3
 
 # Durcissement : l'app ne peut écrire que dans ses données.
+# Le processus ne peut jamais obtenir plus de droits (setuid, sudo...).
 NoNewPrivileges=true
+# Tout le système de fichiers est en lecture seule pour le service (sauf ReadWritePaths) ;
 ProtectSystem=strict
+# /home et /root sont invisibles ;
 ProtectHome=true
+# /tmp privé, propre au service ; pas d'accès aux périphériques matériels ;
 PrivateTmp=true
 PrivateDevices=true
+# interdiction de modifier les réglages du noyau, d'en charger des modules, de toucher aux cgroups ;
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
+# interdiction de créer des fichiers setuid/setgid ; mode d'exécution du processeur figé ;
 RestrictSUIDSGID=true
 LockPersonality=true
+# seul dossier accessible en écriture : celui des données.
 ReadWritePaths=/var/lib/terrain
 
+# [Install] : « systemctl enable terrain » rattache le service au démarrage normal de la machine.
 [Install]
 WantedBy=multi-user.target

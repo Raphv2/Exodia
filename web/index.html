@@ -1,21 +1,42 @@
 <!doctype html>
+<!-- Page HTML unique de l'application (« SPA » : une seule page, le JavaScript change l'affichage).
+     Tout l'écran est construit par web/src/main.ts dans la balise <div id="app"> plus bas.
+     Vite sert ce fichier en développement et le recopie, complété, dans dist/web à la compilation.
+     lang="fr" : indique la langue aux lecteurs d'écran et au navigateur (césure, traduction). -->
 <html lang="fr">
   <head>
+    <!-- Encodage des caractères : UTF-8, pour les accents. -->
     <meta charset="UTF-8" />
+    <!-- Largeur de la page = largeur de l'écran, sans zoom au départ.
+         viewport-fit=cover : la page s'étend aussi sous l'encoche et la barre d'accueil de l'iPhone ;
+         styles.css repousse ensuite le contenu avec env(safe-area-inset-top / bottom). -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Couleur de la barre du navigateur sur mobile (gris très sombre, la même pour les deux espaces). -->
     <meta name="theme-color" content="#1B1D21" />
+    <!-- Demande aux moteurs de recherche de ne pas indexer cette page ni suivre ses liens. -->
     <meta name="robots" content="noindex, nofollow" />
+    <!-- Une fois ajoutée à l'écran d'accueil, l'app s'ouvre en plein écran, sans barre d'adresse
+         (la première balise pour iPhone, la seconde pour Android / Chrome). -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <!-- iPhone en plein écran : la barre d'état (heure, batterie) devient transparente par-dessus la page. -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Nom affiché sous l'icône sur l'écran d'accueil de l'iPhone. -->
     <meta name="apple-mobile-web-app-title" content="Terrain" />
+    <!-- Icônes et manifeste, servis depuis web/public (fichiers copiés tels quels par Vite) :
+         icône d'onglet (SVG), icône d'écran d'accueil iPhone (PNG 180 px), et manifeste d'application
+         web (nom, couleurs, icônes Android) qui rend l'app installable. -->
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Titre de l'onglet du navigateur. -->
     <title>Terrain</title>
   </head>
   <body>
+    <!-- Conteneur vide : main.ts y construit toute l'interface. -->
     <div id="app"></div>
+    <!-- Point d'entrée du JavaScript. type="module" autorise les import/export ;
+         à la compilation, Vite remplace ce chemin par le fichier compilé (nom unique, mis en cache). -->
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

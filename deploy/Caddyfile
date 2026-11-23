@@ -1,6 +1,13 @@
 # Terrain : Caddy obtient et renouvelle le certificat HTTPS tout seul.
+# install.sh copie ce fichier dans /etc/caddy/Caddyfile en remplaçant le marqueur
+# de domaine de la ligne suivante par le vrai domaine.
+# Un bloc par site : il suffit d'écrire le nom du site pour que Caddy obtienne le
+# certificat HTTPS et redirige automatiquement HTTP vers HTTPS.
 __DOMAIN__ {
+	# Compresse les réponses (zstd si le navigateur le comprend, sinon gzip).
 	encode zstd gzip
+	# Relaye toutes les requêtes à l'app Node, qui n'écoute que sur la machine (127.0.0.1).
+	# Caddy ajoute les en-têtes X-Forwarded-For / -Proto (d'où TRUST_PROXY=1 côté app).
 	reverse_proxy 127.0.0.1:3180 {
 		# Temps réel (SSE) : on transmet chaque message immédiatement.
 		flush_interval -1

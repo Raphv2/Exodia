@@ -1,6 +1,11 @@
 # Caddy (profil « caddy » de docker-compose) : HTTPS automatique pour $DOMAIN.
+# Même rôle que deploy/Caddyfile, version Docker : le nom du site vient de la variable
+# d'environnement DOMAIN (syntaxe de Caddy : dollar + nom entre accolades).
 {$DOMAIN} {
+	# Compresse les réponses (zstd si le navigateur le comprend, sinon gzip).
 	encode zstd gzip
+	# « terrain » est le nom du service dans docker-compose.yml : Docker le traduit en
+	# adresse du conteneur sur le réseau interne commun aux deux conteneurs.
 	reverse_proxy terrain:3180 {
 		# Temps réel (SSE) : chaque message est transmis immédiatement.
 		flush_interval -1

@@ -7,37 +7,58 @@
 # Cas 2 : rien n'occupe les ports 80/443 → Caddy fournit le HTTPS automatiquement :
 #   DOMAIN=carte.raphaelgosset.fr docker compose --profile caddy up -d
 
+# Liste des conteneurs (« services ») à lancer ensemble.
 services:
+  # Le conteneur de l'application.
   terrain:
+    # Image construite à partir du Dockerfile de ce dossier, et nommée terrain:latest.
     build: .
     image: terrain:latest
+    # Nom fixe du conteneur (pratique pour : docker logs terrain).
     container_name: terrain
+    # Redémarre après un plantage ou un redémarrage de la machine, sauf si on l'a arrêté à la main.
     restart: unless-stopped
     init: true   # arrêt propre (signaux transmis à Node)
+    # Variables d'environnement passées à l'app.
     environment:
       # Adresse publique, utilisée dans les liens d'invitation.
+      # Syntaxe DOMAIN:-valeur entre accolades : la variable DOMAIN si elle existe, sinon la valeur indiquée.
       PUBLIC_URL: https://${DOMAIN:-carte.raphaelgosset.fr}
+    # Volume nommé terrain-data monté sur /data : base SQLite et photos survivent aux reconstructions.
     volumes:
       - terrain-data:/data
+    # Port publié UNIQUEMENT sur 127.0.0.1 (la machine elle-même) : injoignable directement
+    # depuis Internet, seul un proxy installé sur la machine peut l'atteindre.
+    # TERRAIN_PORT permet de changer le port côté machine (3180 par défaut).
     ports:
       - "127.0.0.1:${TERRAIN_PORT:-3180}:3180"
 
+  # Caddy : serveur web qui obtient et renouvelle tout seul le certificat HTTPS (Let's Encrypt).
   caddy:
+    # Image officielle de Caddy, version 2.
     image: caddy:2
+    # Profil : ce service ne démarre que si l'on ajoute --profile caddy à la commande.
     profiles: ["caddy"]
     restart: unless-stopped
+    # Démarré après le conteneur terrain (sans attendre qu'il soit « en bonne santé »).
     depends_on: [terrain]
+    # Domaine lu par deploy/Caddyfile.docker.
     environment:
       DOMAIN: ${DOMAIN:-carte.raphaelgosset.fr}
+    # Ports publics : 80 (HTTP, pour obtenir le certificat puis rediriger vers HTTPS),
+    # 443 TCP (HTTPS) et 443 UDP (HTTP/3).
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
+    # Configuration de Caddy montée en lecture seule (:ro), puis deux volumes pour
+    # conserver les certificats et l'état de Caddy entre deux redémarrages.
     volumes:
       - ./deploy/Caddyfile.docker:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
 
+# Déclaration des volumes nommés : Docker les stocke lui-même (dans /var/lib/docker/volumes).
 volumes:
   terrain-data:
   caddy-data:

@@ -1,9 +1,16 @@
+# Fichiers et dossiers NON envoyés à Docker pendant la construction de l'image (le « contexte »).
+# Intérêt : construction plus rapide, et aucune donnée ni secret local ne finit dans l'image.
+# node_modules : les dépendances sont réinstallées proprement dans l'image (npm ci).
 node_modules
+# Ancienne compilation de l'interface : refaite dans l'image.
 dist
+# Données locales (base SQLite, photos), y compris les copies nommées data-quelque-chose.
 data
 data-*
+# Historique Git et réglages de Claude Code : inutiles dans l'image.
 .git
 .claude
+# Journaux, fichier de variables secrètes .env, sauvegardes téléchargées.
 *.log
 .env
 sauvegardes-terrain

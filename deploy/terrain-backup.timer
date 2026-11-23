@@ -1,10 +1,17 @@
+# Minuteur systemd (l'équivalent d'une tâche cron) : déclenche terrain-backup.service,
+# le service de même nom. Voir les prochains déclenchements : systemctl list-timers
 [Unit]
 Description=Sauvegarde quotidienne de Terrain
 
+# [Timer] : quand déclencher.
 [Timer]
+# Tous les jours à 4 h du matin (heure du serveur).
 OnCalendar=*-*-* 04:00
+# Décalage aléatoire de 0 à 15 minutes, pour ne pas lancer pile en même temps que d'autres tâches.
 RandomizedDelaySec=15min
+# Si la machine était éteinte à 4 h, la sauvegarde est faite dès le démarrage suivant.
 Persistent=true
 
 [Install]
+# Activé en même temps que les autres minuteurs du système (systemctl enable terrain-backup.timer).
 WantedBy=timers.target

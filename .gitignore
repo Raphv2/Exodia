@@ -1,6 +1,12 @@
+# Fichiers que Git ne doit jamais suivre (ni donc envoyer sur GitHub).
+# Dépendances installées par npm (se réinstallent avec npm ci).
 node_modules/
+# Interface compilée (se refait avec npm run build).
 dist/
+# Données locales : base SQLite et photos (données personnelles, jamais dans le dépôt).
 data/
+# Variables secrètes éventuelles, puis journaux.
 .env
 *.log
+# Sauvegardes téléchargées depuis le serveur.
 sauvegardes-terrain/

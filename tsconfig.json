@@ -1,17 +1,34 @@
+// Configuration de TypeScript. Ce fichier est du JSONC (JSON avec commentaires) : les
+// commentaires // sont acceptés ici, contrairement à package.json.
+// Il sert à « npm run typecheck » (tsc) et à l'éditeur (VS Code) pour signaler les erreurs.
+// Le code n'est pas compilé par tsc : tsx exécute le serveur, Vite compile l'interface.
 {
   "compilerOptions": {
+    // Version de JavaScript visée : ES2022 (await au niveau du module, champs de classe...).
     "target": "ES2022",
+    // Modules modernes : import / export.
     "module": "ESNext",
+    // Résolution des imports « à la manière d'un bundler » (Vite, tsx) : pas d'extension .js obligatoire.
     "moduleResolution": "Bundler",
+    // Types des API connues : JavaScript ES2023, plus celles du navigateur (DOM et ses itérables).
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // Types globaux chargés : Node.js (process, Buffer...) et Vite (import.meta.env, import de .css).
     "types": ["node", "vite/client"],
+    // strict : active toutes les vérifications strictes (null possible, any implicite interdit...).
     "strict": true,
+    // noEmit : tsc vérifie seulement, il ne produit aucun fichier .js.
     "noEmit": true,
+    // Ne pas revérifier les fichiers de types (.d.ts) des bibliothèques : plus rapide.
     "skipLibCheck": true,
+    // Permet import express from 'express' sur des paquets écrits à l'ancienne (CommonJS).
     "esModuleInterop": true,
+    // Chaque fichier doit pouvoir être compilé seul, comme le font Vite (esbuild) et tsx.
     "isolatedModules": true,
+    // Erreur si une variable locale est déclarée mais jamais utilisée.
     "noUnusedLocals": true,
+    // Erreur si un « case » de switch continue dans le suivant faute de break / return.
     "noFallthroughCasesInSwitch": true
   },
+  // Dossiers vérifiés : serveur, code partagé client/serveur, interface, et la config de Vite.
   "include": ["server", "shared", "web/src", "vite.config.ts"]
 }

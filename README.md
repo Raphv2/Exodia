@@ -90,6 +90,8 @@ Bon réflexe : montrer le QR code **en direct** plutôt que d'envoyer le lien pa
 
 ## Organisation du code
 
+Pour comprendre le code en détail : [docs/GUIDE-DU-CODE.md](docs/GUIDE-DU-CODE.md) (architecture, concepts, fichier par fichier ; chaque fichier source est aussi commenté ligne par ligne) et [docs/AUTOCRITIQUE.md](docs/AUTOCRITIQUE.md) (défauts connus et priorités).
+
 ```
 shared/   modèle commun (types de points, couleurs, récurrence)
 server/   API Express : accès et invitations, points et photos, temps réel (SSE)
