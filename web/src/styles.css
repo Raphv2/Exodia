@@ -1298,3 +1298,13 @@ input[type='date'].input::-webkit-date-and-time-value, input[type='time'].input:
 .home-badge { padding: 2px 8px; border-radius: 4px; background: #fff4d6; color: #8a5a00; border: 1px solid #f0c96a; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; cursor: help; }
 .vote-indicatif { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 0; padding: 8px 10px; border-radius: var(--r); background: #fff4d6; color: #6b4600; font-size: 13px; }
 .vote-indicatif .ico { color: inherit; flex: none; margin-top: 1px; }
+
+/* Écran du code : vote déjà sur la page d'accueil (code facultatif) */
+.kahoot-open { display: flex; align-items: flex-start; gap: 12px; text-align: left; padding: 12px 14px; border-radius: var(--r-lg); background: #e8f5ee; color: #0B6E4F; }
+.kahoot-open .ico { color: inherit; flex: none; margin-top: 2px; }
+.kahoot-open div { display: flex; flex-direction: column; gap: 2px; }
+.kahoot-open strong { font-size: 17px; }
+.kahoot-open span { font-size: 14px; color: #2f5a46; }
+.kahoot-code-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: -8px; }
+.kahoot-code.small { gap: 5px; }
+.kahoot-code.small span { width: 40px; height: 52px; font-size: 32px; border-radius: var(--r); background: var(--ink-soft); }

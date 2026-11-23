@@ -74,6 +74,7 @@ function voteDto(v: VoteRow, opts: { full: boolean; voterKey?: string }): Vote {
     id: v.id, pointId: v.point_id, question: v.question, options, status: v.status, radius: v.radius,
     code: opts.full && v.status === 'open' ? v.code : null,
     total, counts: showResults ? c : null, myChoice: mine, createdAt: v.created_at, closedAt: v.closed_at,
+    openToAll: isOpenToAll(v, getPoint(v.point_id)),
   };
 }
 
@@ -253,7 +254,9 @@ publicVotes.post('/votes/ballot', tryLimit, (req, res) => {
  * Votes ouverts à tous, SANS code : uniquement les votes « peu importe la distance »
  * d'une AG annoncée publiquement (sur une AG interne, la question ne doit pas fuiter : le code reste nécessaire).
  */
-const isOpenToAll = (v: VoteRow, ag: PointLite | undefined) => !!ag && v.status === 'open' && v.radius === 0 && ag.type === 'ag' && ag.space === 'mvt' && !!ag.public;
+function isOpenToAll(v: VoteRow, ag: PointLite | undefined): boolean {
+  return !!ag && v.status === 'open' && v.radius === 0 && ag.type === 'ag' && ag.space === 'mvt' && !!ag.public;
+}
 
 publicVotes.get('/votes/open', (req, res) => {
   const rows = db.prepare("SELECT * FROM votes WHERE status = 'open' AND radius = 0 ORDER BY created_at DESC LIMIT 50").all() as unknown as VoteRow[];

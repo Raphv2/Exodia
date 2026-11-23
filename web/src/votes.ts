@@ -144,8 +144,13 @@ export function openKahoot(voteId: string) {
       const open = v.status === 'open';
       clear(body,
         h('p', { class: 'kahoot-question' }, v.question),
-        open && v.code ? h('div', { class: 'kahoot-code', 'aria-label': `Code ${v.code.split('').join(' ')}` }, v.code.split('').map((d) => h('span', null, d))) : null,
-        open ? h('p', { class: 'kahoot-hint' }, `Tape ce code sur la page d'accueil de l'app (sans compte) ou dans la fiche de l'AG. ${whereText(v.radius)}${v.radius ? '' : ' Vote indicatif : sans compte, on peut revoter avec un autre navigateur.'}`) : h('p', { class: 'kahoot-hint' }, 'Vote clos : voici les résultats.'),
+        // Vote déjà sur la page d'accueil : on le dit en grand, le code devient secondaire (facultatif).
+        open && v.openToAll ? h('div', { class: 'kahoot-open' }, icon('globe', 22),
+          h('div', null, h('strong', null, 'Ce vote est sur la page d\'accueil'), h('span', null, 'Pas besoin de code : il suffit d\'ouvrir le site et de voter. Vote indicatif.'))) : null,
+        open && v.code && v.openToAll ? h('span', { class: 'kahoot-code-label' }, 'Code (facultatif)') : null,
+        open && v.code ? h('div', { class: `kahoot-code${v.openToAll ? ' small' : ''}`, 'aria-label': `Code ${v.code.split('').join(' ')}` }, v.code.split('').map((d) => h('span', null, d))) : null,
+        open && !v.openToAll ? h('p', { class: 'kahoot-hint' }, `Tape ce code sur la page d'accueil de l'app (sans compte) ou dans la fiche de l'AG. ${whereText(v.radius)}${v.radius ? '' : ' Vote indicatif : sans compte, on peut revoter avec un autre navigateur.'}`) : null,
+        !open ? h('p', { class: 'kahoot-hint' }, 'Vote clos : voici les résultats.') : null,
         h('p', { class: 'kahoot-total' }, h('strong', null, String(v.total)), ` vote${v.total > 1 ? 's' : ''}`),
         resultBars(v.options, v.counts, v.total),
       );

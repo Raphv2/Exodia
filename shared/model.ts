@@ -318,6 +318,8 @@ export interface Vote {
   myChoice: number | null;
   createdAt: number;
   closedAt: number | null;
+  /** Sur la page d'accueil publique : on vote sans code (vote « peu importe la distance » d'une AG annoncée). */
+  openToAll: boolean;
 }
 /** Archive (côté Mouvement) : document daté, privé (membres) ou public (visible sans compte). */
 export interface ArchiveItem {
