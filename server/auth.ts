@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { db } from './db';
-import type { Device, Invite, Role } from '../shared/model';
+import { SPACES, type Device, type Invite, type Role, type Space } from '../shared/model';
 
 export const COOKIE = 'terrain_sid';
 const COOKIE_MAX_AGE = 400 * 86400 * 1000;
@@ -17,7 +17,21 @@ export interface DeviceRow {
   last_seen: number | null;
   revoked_at: number | null;
   user_agent: string | null;
+  /** Espaces, séparés par des virgules (« lfi », « mvt » ou « lfi,mvt »). */
+  spaces: string;
+  owner: number;
 }
+
+/** Lecture / écriture de la liste d'espaces stockée en texte. */
+export const parseSpaces = (s: string | null | undefined): Space[] =>
+  SPACES.filter((x) => (s ?? '').split(',').includes(x));
+export const joinSpaces = (list: Space[]) => SPACES.filter((x) => list.includes(x)).join(',');
+
+/** Espaces auxquels un appareil a accès. */
+export const spacesOf = (d: DeviceRow): Space[] => parseSpaces(d.spaces);
+export const hasSpace = (d: DeviceRow, s: string) => spacesOf(d).includes(s as Space);
+/** Tous les espaces de `list` sont-ils accessibles à cet appareil ? */
+export const coversSpaces = (d: DeviceRow, list: Space[]) => list.every((s) => hasSpace(d, s));
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -120,17 +134,18 @@ export interface InviteRow {
   created_by: string | null;
   created_at: number;
   revoked_at: number | null;
+  spaces: string;
 }
 
 const insertInvite = db.prepare(`
-  INSERT INTO invites (id, token_hash, role, label, max_uses, uses, expires_at, created_by, created_at)
-  VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`);
+  INSERT INTO invites (id, token_hash, role, label, max_uses, uses, expires_at, created_by, created_at, spaces)
+  VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`);
 
-export function createInvite(opts: { role: Role; ttlMinutes: number; maxUses: number; label: string | null; createdBy: string | null }) {
+export function createInvite(opts: { role: Role; ttlMinutes: number; maxUses: number; label: string | null; createdBy: string | null; spaces: Space[] }) {
   const token = newToken();
   const id = newId();
   const now = Date.now();
-  insertInvite.run(id, sha256(token), opts.role, opts.label, opts.maxUses, now + opts.ttlMinutes * 60_000, opts.createdBy, now);
+  insertInvite.run(id, sha256(token), opts.role, opts.label, opts.maxUses, now + opts.ttlMinutes * 60_000, opts.createdBy, now, joinSpaces(opts.spaces));
   return { token, id };
 }
 
@@ -138,6 +153,7 @@ export function inviteToDto(r: InviteRow & { created_by_name?: string | null }):
   return {
     id: r.id,
     role: r.role,
+    spaces: parseSpaces(r.spaces),
     label: r.label,
     maxUses: r.max_uses,
     uses: r.uses,
@@ -154,6 +170,8 @@ export function deviceToDto(r: DeviceRow & { invited_by_name?: string | null }):
     id: r.id,
     name: r.name,
     role: r.role,
+    spaces: parseSpaces(r.spaces),
+    owner: !!r.owner,
     invitedBy: r.invited_by,
     invitedByName: r.invited_by_name ?? null,
     createdAt: r.created_at,
@@ -168,7 +186,8 @@ export function ensureBootstrapAdmin(baseUrl: string) {
   const admins = db.prepare("SELECT COUNT(*) AS n FROM devices WHERE role = 'admin' AND revoked_at IS NULL").get() as { n: number };
   if (admins.n > 0) return;
   db.prepare("UPDATE invites SET revoked_at = ? WHERE label = 'bootstrap' AND revoked_at IS NULL").run(Date.now());
-  const { token } = createInvite({ role: 'admin', ttlMinutes: 24 * 60, maxUses: 1, label: 'bootstrap', createdBy: null });
+  // Le premier appareil devient propriétaire, avec accès aux deux espaces.
+  const { token } = createInvite({ role: 'admin', ttlMinutes: 24 * 60, maxUses: 1, label: 'bootstrap', createdBy: null, spaces: [...SPACES] });
   const line = '─'.repeat(72);
-  console.log(`\n${line}\n  Aucun admin pour l'instant. Ouvre ce lien (valable 24 h, usage unique)\n  sur l'appareil qui sera admin :\n\n  ${baseUrl}/#/join/${token}\n${line}\n`);
+  console.log(`\n${line}\n  Aucun admin pour l'instant. Ouvre ce lien (valable 24 h, usage unique)\n  sur l'appareil qui sera propriétaire (accès aux deux espaces) :\n\n  ${baseUrl}/#/join/${token}\n${line}\n`);
 }

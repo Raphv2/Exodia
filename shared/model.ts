@@ -7,6 +7,17 @@ export type PanneauStatus = 'a_coller' | 'colle' | 'abime';
 export type BlocageStatus = 'tenu' | 'vide' | 'leve';
 export type PointStatus = PanneauStatus | BlocageStatus;
 
+/**
+ * Deux espaces vraiment séparés (le serveur l'impose) :
+ * - « lfi » : le côté LFI (panneaux, collage, tractage…) ;
+ * - « mvt » : le côté mouvement (blocus, blocages, police…).
+ * Ce qui est commun (AG, rassemblement, local, matériel, flash, warning, danger…) existe des deux côtés,
+ * mais chaque point appartient à un seul espace et n'est vu que par ceux qui y ont accès.
+ */
+export type Space = 'lfi' | 'mvt';
+export const SPACES: Space[] = ['lfi', 'mvt'];
+export const SPACE_LABEL: Record<Space, string> = { lfi: 'LFI', mvt: 'Mouvement' };
+
 export const TYPE_KEYS = [
   'panneau', 'collage', 'ag', 'tractage', 'rassemblement', 'blocus', 'blocage', 'materiel', 'local', 'autre', 'warning', 'danger', 'police',
 ] as const;
@@ -26,48 +37,73 @@ export interface TypeMeta {
   /** Proposé « toute la journée » par défaut. */
   allDay?: boolean;
   placeholder: string;
+  /** Espaces où ce type existe (par défaut : les deux). */
+  spaces?: Space[];
 }
 
 export const TYPES: Record<PointType, TypeMeta> = {
-  panneau:  { label: 'Panneau électoral', short: 'Panneau', color: '#7B13D6', ink: '#fff', icon: 'presentation', modes: ['fixe'], routable: true, placeholder: 'Panneau n°12 – école Jean-Jaurès' },
-  collage:  { label: 'Point de collage', short: 'Collage', color: '#00A86B', ink: '#fff', icon: 'paint-roller', modes: ['fixe', 'event'], routable: true, placeholder: 'Collage quartier gare' },
+  panneau:  { label: 'Panneau électoral', short: 'Panneau', color: '#7B13D6', ink: '#fff', icon: 'presentation', modes: ['fixe'], routable: true, spaces: ['lfi'], placeholder: 'Panneau n°12 – école Jean-Jaurès' },
+  collage:  { label: 'Point de collage', short: 'Collage', color: '#00A86B', ink: '#fff', icon: 'paint-roller', modes: ['fixe', 'event'], routable: true, spaces: ['lfi'], placeholder: 'Collage quartier gare' },
   ag:       { label: 'Assemblée générale', short: 'AG', color: '#E5007D', ink: '#fff', icon: 'users', modes: ['event'], placeholder: 'AG du groupe d\'action' },
-  tractage: { label: 'Tractage', short: 'Tractage', color: '#FF7A00', ink: '#fff', icon: 'newspaper', modes: ['event'], placeholder: 'Tractage marché du dimanche' },
+  tractage: { label: 'Tractage', short: 'Tractage', color: '#FF7A00', ink: '#fff', icon: 'newspaper', modes: ['event'], spaces: ['lfi'], placeholder: 'Tractage marché du dimanche' },
   rassemblement: { label: 'Rassemblement', short: 'Rassemblement', color: '#1F4FD1', ink: '#fff', icon: 'megaphone', modes: ['event'], placeholder: 'Rassemblement devant la mairie' },
-  blocus:   { label: 'Blocus', short: 'Blocus', color: '#5C1033', ink: '#fff', icon: 'flame', modes: ['event'], placeholder: 'Blocus fac – RDV quai 43' },
-  blocage:  { label: 'Blocage', short: 'Blocage', color: '#8B1E3F', ink: '#fff', icon: 'construction', modes: ['fixe'], placeholder: 'Bâtiment A – entrée principale' },
-  materiel: { label: 'Matériel', short: 'Matériel', color: '#0098B6', ink: '#fff', icon: 'package', modes: ['fixe', 'event'], placeholder: 'Matos : colle, tracts, poubelles…' },
+  blocus:   { label: 'Blocus', short: 'Blocus', color: '#5C1033', ink: '#fff', icon: 'flame', modes: ['event'], spaces: ['mvt'], placeholder: 'Blocus fac – RDV quai 43' },
+  blocage:  { label: 'Blocage', short: 'Blocage', color: '#8B1E3F', ink: '#fff', icon: 'construction', modes: ['fixe'], spaces: ['mvt'], placeholder: 'Bâtiment A – entrée principale' },
+  materiel: { label: 'Matériel', short: 'Matériel', color: '#0098B6', ink: '#fff', icon: 'package', modes: ['fixe', 'event'], placeholder: 'Dépôt de matériel' },
   local:    { label: 'Local', short: 'Local', color: '#00232C', ink: '#fff', icon: 'house', modes: ['fixe', 'event'], placeholder: 'Local du groupe' },
   autre:    { label: 'Autre', short: 'Autre', color: '#5B6770', ink: '#fff', icon: 'map-pin', modes: ['fixe', 'event'], placeholder: 'Titre du point' },
   warning:  { label: 'Warning', short: 'Warning', color: '#FFC400', ink: '#00232C', icon: 'triangle-alert', modes: ['event'], alert: true, placeholder: 'Attention' },
   danger:   { label: 'Danger', short: 'Danger', color: '#F53B3B', ink: '#fff', icon: 'siren', modes: ['event'], alert: true, placeholder: 'Danger' },
-  police:   { label: 'Police / CRS', short: 'Police', color: '#1546E0', ink: '#fff', icon: 'police', modes: ['event'], alert: true, placeholder: 'Police' },
+  police:   { label: 'Police / CRS', short: 'Police', color: '#1546E0', ink: '#fff', icon: 'police', modes: ['event'], alert: true, spaces: ['mvt'], placeholder: 'Police' },
 };
 
 export const ALERT_DURATIONS = [15, 30, 60, 120] as const;
 
 export type AlertType = 'warning' | 'danger' | 'police';
 
-export const ALERT_PRESETS: Record<AlertType, string[]> = {
-  warning: ['Affiches arrachées', 'Panneau recouvert', 'Zone tendue', 'Passage difficile'],
-  danger: ['Agression', 'Groupe hostile', 'Personne blessée', 'Zone à éviter'],
-  police: ['CRS', 'Police', 'BAC', 'Contrôle d\'identité', 'Nasse', 'Fourgons'],
+/** Le type existe-t-il dans cet espace ? */
+export const typeInSpace = (t: PointType, s: Space) => !TYPES[t].spaces || TYPES[t].spaces!.includes(s);
+
+/** Alertes prédéfinies, propres à chaque espace (aucune référence croisée). */
+export const ALERT_PRESETS_BY_SPACE: Record<Space, Partial<Record<AlertType, string[]>>> = {
+  lfi: {
+    warning: ['Affiches arrachées', 'Panneau recouvert', 'Zone tendue', 'Passage difficile'],
+    danger: ['Agression', 'Groupe hostile', 'Personne blessée', 'Zone à éviter'],
+  },
+  mvt: {
+    warning: ['Zone tendue', 'Passage difficile', 'Accès bloqué', 'Personnes hostiles'],
+    danger: ['Agression', 'Groupe hostile', 'Personne blessée', 'Zone à éviter'],
+    police: ['CRS', 'Police', 'BAC', 'Contrôle d\'identité', 'Nasse', 'Fourgons'],
+  },
 };
+export const alertPresets = (t: AlertType, s: Space) => ALERT_PRESETS_BY_SPACE[s][t] ?? [];
 
 /** Flash : dans combien de temps ça commence (min) et combien de temps ça dure (min). */
 export const FLASH_STARTS = [0, 15, 30, 60] as const;
 export const FLASH_DURATIONS = [30, 60, 120, 180] as const;
 
-/** Matériel proposé à la création d'un événement (on peut aussi en ajouter à la main). */
-export const MATERIAL_PRESETS: Partial<Record<PointType, string[]>> = {
-  tractage: ['Tracts', 'Affiches', 'Colle', 'Table', 'Chasubles', 'Mégaphone', 'Flyers'],
-  collage: ['Affiches', 'Colle', 'Seaux', 'Balais', 'Gants'],
-  rassemblement: ['Banderole', 'Affiches', 'Colle', 'Mégaphone', 'Drapeaux', 'Pancartes', 'Chasubles'],
-  blocus: ['Poubelles', 'Palettes', 'Banderole', 'Affiches', 'Colle', 'Mégaphone', 'Scotch'],
-  ag: ['Affiches', 'Colle', 'Chaises', 'Vidéoprojecteur', 'Rallonge', 'Paperboard'],
-  materiel: ['Affiches', 'Colle', 'Voiture', 'Diable', 'Sacs'],
+/**
+ * Matériel proposé à la création d'un événement, propre à chaque espace
+ * (rien sur le collage côté Mouvement, rien sur les blocus côté LFI). On peut aussi en ajouter à la main.
+ */
+const MATERIAL_BY_SPACE: Record<Space, Partial<Record<PointType, string[]>> & { default: string[] }> = {
+  lfi: {
+    tractage: ['Tracts', 'Affiches', 'Colle', 'Table', 'Chasubles', 'Mégaphone', 'Flyers'],
+    collage: ['Affiches', 'Colle', 'Seaux', 'Balais', 'Gants'],
+    rassemblement: ['Banderole', 'Affiches', 'Colle', 'Mégaphone', 'Drapeaux', 'Pancartes', 'Chasubles'],
+    ag: ['Affiches', 'Colle', 'Chaises', 'Vidéoprojecteur', 'Rallonge', 'Paperboard'],
+    materiel: ['Affiches', 'Colle', 'Tracts', 'Voiture', 'Diable', 'Sacs'],
+    default: ['Tracts', 'Affiches', 'Colle', 'Banderole', 'Mégaphone'],
+  },
+  mvt: {
+    blocus: ['Poubelles', 'Palettes', 'Banderole', 'Mégaphone', 'Scotch', 'Cadenas'],
+    rassemblement: ['Banderole', 'Mégaphone', 'Pancartes', 'Drapeaux', 'Trousse de secours', 'Eau'],
+    ag: ['Chaises', 'Vidéoprojecteur', 'Rallonge', 'Paperboard'],
+    materiel: ['Poubelles', 'Palettes', 'Banderoles', 'Voiture', 'Diable', 'Sacs'],
+    default: ['Banderole', 'Mégaphone', 'Pancartes', 'Eau', 'Trousse de secours'],
+  },
 };
-export const MATERIAL_DEFAULT = ['Tracts', 'Banderole', 'Mégaphone', 'Affiches', 'Colle'];
+export const materialPresets = (t: PointType, s: Space) => MATERIAL_BY_SPACE[s][t] ?? MATERIAL_BY_SPACE[s].default;
 
 /** Le signalement de problème n'a de sens que sur un lieu tenu : le blocage. */
 export const canReportProblem = (t: PointType) => t === 'blocage';
@@ -154,6 +190,8 @@ export const COLOR_CHOICES = [
 
 export interface Point {
   id: string;
+  /** Espace auquel appartient le point. */
+  space: Space;
   mode: Mode;
   type: PointType;
   title: string;
@@ -192,6 +230,8 @@ export interface Point {
 
 /** Données envoyées pour créer / modifier un point. */
 export interface PointInput {
+  /** Espace du point (création ; ignoré en modification). */
+  space?: Space;
   mode: Mode;
   type: PointType;
   title: string;
@@ -219,6 +259,10 @@ export interface Device {
   id: string;
   name: string;
   role: Role;
+  /** Espaces auxquels l'appareil a accès. */
+  spaces: Space[];
+  /** Propriétaire : accès à tout, seul à nommer des admins et à leur donner des espaces. */
+  owner: boolean;
   invitedBy: string | null;
   invitedByName: string | null;
   createdAt: number;
@@ -230,6 +274,7 @@ export interface Device {
 export interface Invite {
   id: string;
   role: Role;
+  spaces: Space[];
   label: string | null;
   maxUses: number;
   uses: number;

@@ -1,10 +1,10 @@
 {
-  "name": "Terrain · carte militante",
+  "name": "Terrain",
   "short_name": "Terrain",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#7B13D6",
-  "theme_color": "#7B13D6",
+  "background_color": "#1B1D21",
+  "theme_color": "#1B1D21",
   "lang": "fr",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" },

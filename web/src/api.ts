@@ -1,4 +1,4 @@
-import type { CreatedInvite, Device, Invite, Point, PointInput, Role } from '../../shared/model';
+import type { CreatedInvite, Device, Invite, Point, PointInput, Role, Space } from '../../shared/model';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -56,11 +56,11 @@ export const api = {
   extendProblem: (problemId: string, minutes: number) => req<{ point: Point }>('POST', `/problems/${problemId}/extend`, { minutes }),
   uploadPhoto: (blob: Blob) => req<{ photo: string }>('POST', '/photos', undefined, blob),
 
-  createInvite: (o: { role: Role; ttlMinutes: number; maxUses: number; label?: string | null }) => req<CreatedInvite>('POST', '/invites', o),
+  createInvite: (o: { role: Role; ttlMinutes: number; maxUses: number; label?: string | null; spaces: Space[] }) => req<CreatedInvite>('POST', '/invites', o),
   invites: () => req<{ invites: Invite[] }>('GET', '/invites'),
   revokeInvite: (id: string) => req('DELETE', `/invites/${id}`),
-  devices: () => req<{ devices: Device[] }>('GET', '/devices'),
-  updateDevice: (id: string, o: { role?: Role; name?: string }) => req('PATCH', `/devices/${id}`, o),
+  devices: () => req<{ devices: (Device & { manageable: boolean })[] }>('GET', '/devices'),
+  updateDevice: (id: string, o: { role?: Role; name?: string; spaces?: Space[] }) => req('PATCH', `/devices/${id}`, o),
   revokeDevice: (id: string, cascade: boolean) => req<{ revoked: number }>('DELETE', `/devices/${id}${cascade ? '?cascade=1' : ''}`),
 };
 

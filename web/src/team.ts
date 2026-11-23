@@ -3,10 +3,10 @@ import { store } from './store';
 import { openSheet, confirmSheet } from './sheet';
 import { chips, field } from './forms';
 import { h, icon, clear, toast, relative } from './ui';
-import { ROLE_LABEL, type CreatedInvite, type Device, type Invite, type Role } from '../../shared/model';
+import { ROLE_LABEL, SPACE_LABEL, SPACES, type CreatedInvite, type Device, type Invite, type Role, type Space } from '../../shared/model';
 
 let root: HTMLElement;
-let devices: Device[] = [];
+let devices: (Device & { manageable: boolean })[] = [];
 let invites: Invite[] = [];
 /** Recherche et filtre de la liste des appareils (gardés d'un affichage à l'autre). */
 let devQuery = '';
@@ -97,25 +97,44 @@ function render() {
   );
 }
 
+/** Choix d'espaces proposés : seulement ceux de l'appareil qui choisit. */
+type SpaceChoice = Space | 'both';
+const spaceChoices = (mine: Space[]): { value: SpaceChoice; label: string }[] => [
+  ...mine.map((s) => ({ value: s as SpaceChoice, label: SPACE_LABEL[s] })),
+  ...(mine.length > 1 ? [{ value: 'both' as SpaceChoice, label: 'Les deux' }] : []),
+];
+const toSpaces = (c: SpaceChoice): Space[] => (c === 'both' ? [...SPACES] : [c]);
+const fromSpaces = (list: Space[]): SpaceChoice => (list.length > 1 ? 'both' : list[0]);
+const spaceTags = (list: Space[]) => list.map((s) => h('span', { class: `space-tag space-${s}` }, SPACE_LABEL[s]));
+
 function inviteCard() {
   const me = store.me;
   const isAdmin = me.role === 'admin';
-  const state = { role: 'membre' as Role, ttl: 15, uses: 1, label: '' };
+  const state = { role: 'membre' as Role, ttl: 15, uses: 1, label: '', space: store.space as SpaceChoice };
+  // Seul le propriétaire peut faire entrer un admin.
+  const roles: { value: Role; label: string }[] = [
+    { value: 'membre', label: 'Membre' }, { value: 'relais', label: 'Relais (peut inviter)' },
+    ...(me.owner ? [{ value: 'admin' as Role, label: 'Admin' }] : []),
+  ];
   return h('section', { class: 'card-section invite-card' },
     h('div', { class: 'section-title' }, icon('user-plus', 18), 'Faire entrer quelqu\'un'),
     h('p', { class: 'muted' }, isAdmin
       ? 'Génère un QR code à faire scanner. Pour la sécurité, préfère 15 min et 1 personne, en face à face.'
       : 'Montre ce QR code à la personne, en face à face. Il marche une seule fois, pendant 15 minutes.'),
     isAdmin ? h('div', { class: 'form' },
+      me.spaces.length > 1 ? h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Espace'),
+        chips<SpaceChoice>(spaceChoices(me.spaces), state.space, (v) => (state.space = v)),
+        h('span', { class: 'field-hint' }, 'La personne ne verra que cet espace (ou les deux).')) : null,
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Rôle'),
-        chips<Role>([{ value: 'membre', label: 'Membre' }, { value: 'relais', label: 'Relais (peut inviter)' }, { value: 'admin', label: 'Admin' }], state.role, (v) => (state.role = v))),
+        chips<Role>(roles, state.role, (v) => (state.role = v))),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Valable'), chips(TTL, state.ttl, (v) => (state.ttl = v))),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Pour'), chips(USES, state.uses, (v) => (state.uses = v))),
       field('Note', h('input', { class: 'input', type: 'text', maxlength: '60', placeholder: 'Ex. : groupe d\'action Nord', oninput: (e: Event) => (state.label = (e.target as HTMLInputElement).value) }), undefined, true),
     ) : null,
     h('button', { class: 'btn btn-primary btn-block btn-big', onclick: async () => {
       try {
-        const res = await api.createInvite({ role: state.role, ttlMinutes: state.ttl, maxUses: state.uses, label: state.label || null });
+        const spaces = isAdmin ? toSpaces(state.space) : [store.space];
+        const res = await api.createInvite({ role: state.role, ttlMinutes: state.ttl, maxUses: state.uses, label: state.label || null, spaces });
         showInvite(res);
         if (isAdmin) load();
       } catch (e) {
@@ -194,39 +213,46 @@ function devicesSection() {
   );
 }
 
-function deviceRow(d: Device) {
+function deviceRow(d: Device & { manageable: boolean }) {
   const isMe = d.id === store.me.id;
   return h('li', { class: 'row' },
     h('div', { class: 'avatar small' }, d.name.slice(0, 1).toUpperCase()),
     h('div', { class: 'row-main' },
       h('strong', null, d.name, isMe ? h('em', null, ' (moi)') : null),
-      h('span', null, `${ROLE_LABEL[d.role]} · ${deviceLabel(d.userAgent)} · vu ${d.lastSeen ? relative(d.lastSeen) : 'jamais'}${d.invitedByName ? ` · invité·e par ${d.invitedByName}` : ''}`)),
-    h('button', { class: 'btn btn-small btn-light', onclick: () => manageDevice(d) }, 'Gérer'),
+      h('span', { class: 'row-tags' }, d.owner ? h('span', { class: 'space-tag owner-tag' }, 'Propriétaire') : null, ...spaceTags(d.spaces)),
+      h('span', null, `${d.owner ? 'Propriétaire' : ROLE_LABEL[d.role]} · ${deviceLabel(d.userAgent)} · vu ${d.lastSeen ? relative(d.lastSeen) : 'jamais'}${d.invitedByName ? ` · invité·e par ${d.invitedByName}` : ''}`)),
+    // On ne propose « Gérer » que si on a vraiment le droit (le serveur le vérifie aussi).
+    d.manageable ? h('button', { class: 'btn btn-small btn-light', onclick: () => manageDevice(d) }, 'Gérer') : null,
   );
 }
 
 function manageDevice(d: Device) {
+  const me = store.me;
   let role = d.role;
+  let space = fromSpaces(d.spaces);
   let cascade = false;
   const children = devices.filter((x) => x.invitedBy === d.id).length;
-  // Le dernier admin ne peut être ni rétrogradé ni retiré : on ne propose pas ces actions.
-  const lastAdmin = d.role === 'admin' && devices.filter((x) => x.role === 'admin').length <= 1;
-  if (lastAdmin) {
-    openSheet({
-      title: d.name,
-      body: h('div', { class: 'form' },
-        h('p', { class: 'muted' }, 'C\'est le seul admin : il ne peut pas être rétrogradé ni retiré. Nomme d\'abord un autre admin si besoin.')),
-    });
-    return;
-  }
+  // Seul le propriétaire nomme des admins ; chacun ne donne que ses propres espaces.
+  const roles: { value: Role; label: string }[] = [
+    { value: 'membre', label: 'Membre' }, { value: 'relais', label: 'Relais' },
+    ...(me.owner ? [{ value: 'admin' as Role, label: 'Admin' }] : []),
+  ];
   const s = openSheet({
     title: d.name,
     body: h('div', { class: 'form' },
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Rôle'),
-        chips<Role>([{ value: 'membre', label: 'Membre' }, { value: 'relais', label: 'Relais' }, { value: 'admin', label: 'Admin' }], role, (v) => (role = v))),
+        chips<Role>(roles, role, (v) => (role = v))),
+      me.spaces.length > 1 ? h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Espaces'),
+        chips<SpaceChoice>(spaceChoices(me.spaces), space, (v) => (space = v)),
+        h('span', { class: 'field-hint' }, me.owner
+          ? 'Un admin ne gère que les espaces que tu lui donnes, et ne peut pas nommer d\'autres admins.'
+          : 'Tu ne peux donner que tes propres espaces.')) : null,
       h('button', { class: 'btn btn-primary btn-block', onclick: async () => {
-        try { await api.updateDevice(d.id, { role }); toast('Rôle mis à jour', 'ok'); s.close(); load(); } catch (e) { toast((e as ApiError).message, 'err'); }
-      } }, 'Enregistrer le rôle'),
+        try {
+          await api.updateDevice(d.id, { role, ...(me.spaces.length > 1 ? { spaces: toSpaces(space) } : {}) });
+          toast('Droits mis à jour', 'ok'); s.close(); load();
+        } catch (e) { toast((e as ApiError).message, 'err'); }
+      } }, 'Enregistrer'),
       h('hr'),
       h('label', { class: 'toggle-line' },
         h('input', { type: 'checkbox', onchange: (e: Event) => (cascade = (e.target as HTMLInputElement).checked) }),

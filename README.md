@@ -2,6 +2,12 @@
 
 Web app responsive (PC et mobile, installable sur l'écran d'accueil) pour organiser le terrain :
 
+- **Deux espaces vraiment séparés**, imposés par le serveur :
+  - **LFI** (style insoumis, violet et jaune) : panneaux électoraux, collage, tractage, trajet de collage ;
+  - **Mouvement** (style journal militant : noir, blanc, rouge sang) : blocus, blocages, police / CRS.
+  - Le reste existe des deux côtés (AG, rassemblement, local, dépôt de matériel, flash, warning, danger), mais chaque point appartient à un seul espace. Le matériel et les alertes proposés sont propres à chaque espace, sans référence croisée.
+  - Un appareil ne reçoit **jamais** les points, photos ou notifications d'un espace auquel il n'a pas accès. L'écran de connexion est neutre.
+
 - **Carte** : points fixes (panneaux électoraux, blocages, local, matériel, point de collage…) et événements (rassemblement, blocus, tractage, AG, collage, matériel, local, autre), chacun avec une couleur, une icône, une photo et une description facultatives.
 - **Événements** : avec un horaire, par exemple « 5 h 30, quai 43 », ou sur toute la journée. Ils disparaissent de la carte tout seuls à la fin. L'auteur·rice ou un admin peut les **terminer** plus tôt : ils restent alors dans l'agenda.
 - **Flash** ⚡ : troisième choix à la création (à côté de « Point fixe » et « Événement ») pour une action improvisée. Pas de date à saisir : ça commence maintenant, dans 15 min (par défaut), 30 min ou 1 h, pour 30 min à 3 h. Tout le monde reçoit une notification, et l'épingle porte un petit éclair.
@@ -30,7 +36,7 @@ npm run dev
 
 Au premier lancement, la console affiche un **lien d'invitation admin** (valable 24 h, usage unique). Ouvre-le sur l'appareil qui sera admin. Tant qu'aucun admin n'existe, un nouveau lien est créé à chaque redémarrage et l'ancien est annulé.
 
-Lien admin perdu ? `npm run invite-admin -- https://ton-domaine.fr` crée une invitation de secours (1 h, usage unique).
+Appareil propriétaire perdu ? Sur le serveur, `npm run invite-admin -- https://ton-domaine.fr` crée une invitation de secours (1 h, usage unique) qui redonne un accès propriétaire aux deux espaces.
 
 > La géolocalisation et l'appareil photo ne fonctionnent qu'en **HTTPS** (ou sur `localhost`). Pour tester sur un téléphone avant la mise en ligne, utilise un tunnel HTTPS (par ex. `cloudflared tunnel --url http://localhost:5180`).
 
@@ -72,7 +78,7 @@ Le modèle retenu, c'est la **confiance de main en main, avec un appareil = une 
 2. Le jeton d'invitation est placé après le `#` du lien : il n'est jamais envoyé au serveur dans l'adresse, n'apparaît pas dans les journaux et n'est pas transmis aux autres sites. Le serveur ne stocke que son empreinte SHA-256.
 3. En acceptant l'invitation, l'appareil reçoit une **clé secrète de 256 bits**, rangée dans un cookie `HttpOnly` (illisible par les scripts), `SameSite=Strict` et `Secure` en HTTPS. Pas de mot de passe à retenir ni à se faire voler.
 4. **Traçabilité** : chaque appareil sait qui l'a fait entrer. Un admin peut retirer un appareil, et **toute la chaîne d'invitations qui en découle** en un clic (utile en cas d'infiltration). Le dernier admin ne peut pas être retiré.
-5. **Rôles** : *admin* (tout), *relais* (peut faire entrer une personne à la fois, en face à face, QR valable 1 h au plus), *membre*.
+5. **Rôles** : *propriétaire* (le tout premier appareil : accès aux deux espaces, seul à nommer des admins et à leur donner un ou deux espaces, ne peut pas être retiré), *admin* (gère les relais et membres de ses espaces, modifie tous les points de ses espaces), *relais* (peut faire entrer une personne à la fois, en face à face, QR valable 1 h au plus, dans son espace), *membre* (ajoute des points et des alertes, modifie les siens). Chaque invitation fixe l'espace : LFI, Mouvement ou les deux.
 6. Défenses supplémentaires : protection CSRF (en-tête obligatoire), limitation des tentatives d'invitation, politique de sécurité du contenu (CSP) stricte, photos servies uniquement aux appareils autorisés, photos ré-encodées dans le navigateur avant l'envoi (ce qui **supprime les données EXIF**, dont la position GPS), ménage automatique (alertes expirées, photos orphelines, invitations mortes).
 
 Bon réflexe : montrer le QR code **en direct** plutôt que d'envoyer le lien par message, puisqu'un lien peut être transféré.

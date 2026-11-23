@@ -91,6 +91,19 @@ db.exec(`
 const cols = (table: string) => (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
 if (!cols('points').includes('parent_id')) db.exec('ALTER TABLE points ADD COLUMN parent_id TEXT');
 if (!cols('pledges').includes('arrive_at')) db.exec('ALTER TABLE pledges ADD COLUMN arrive_at INTEGER');
+// Espaces LFI / Mouvement : chaque point appartient à un espace, chaque appareil a accès à un ou deux espaces.
+if (!cols('points').includes('space')) {
+  db.exec("ALTER TABLE points ADD COLUMN space TEXT NOT NULL DEFAULT 'lfi'");
+  db.exec("UPDATE points SET space = 'mvt' WHERE type IN ('blocus', 'blocage', 'police')");
+}
+if (!cols('devices').includes('spaces')) db.exec("ALTER TABLE devices ADD COLUMN spaces TEXT NOT NULL DEFAULT 'lfi,mvt'");
+if (!cols('devices').includes('owner')) db.exec('ALTER TABLE devices ADD COLUMN owner INTEGER NOT NULL DEFAULT 0');
+if (!cols('invites').includes('spaces')) db.exec("ALTER TABLE invites ADD COLUMN spaces TEXT NOT NULL DEFAULT 'lfi,mvt'");
+// Un seul propriétaire : s'il n'y en a pas encore, c'est le plus ancien admin.
+db.exec(`UPDATE devices SET owner = 1, spaces = 'lfi,mvt' WHERE id = (
+  SELECT id FROM devices WHERE role = 'admin' AND revoked_at IS NULL ORDER BY created_at LIMIT 1
+) AND NOT EXISTS (SELECT 1 FROM devices WHERE owner = 1 AND revoked_at IS NULL)`);
+db.exec('CREATE INDEX IF NOT EXISTS points_space ON points(space)');
 if (!cols('points').includes('confirmed_at')) db.exec('ALTER TABLE points ADD COLUMN confirmed_at INTEGER');
 if (!cols('problems').includes('confirmed_at')) db.exec('ALTER TABLE problems ADD COLUMN confirmed_at INTEGER');
 if (!cols('points').includes('flash')) db.exec('ALTER TABLE points ADD COLUMN flash INTEGER NOT NULL DEFAULT 0');

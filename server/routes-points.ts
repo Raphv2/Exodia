@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { db, UPLOAD_DIR } from './db';
-import { newId, type DeviceRow } from './auth';
+import { newId, hasSpace, type DeviceRow } from './auth';
 import { broadcast } from './events';
-import { TYPES, TYPE_KEYS, STATUSES, BLOCUS_COLORS, CONFIRM_LOCK_MIN, canReportProblem, type Participant, type Person, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
+import { TYPES, TYPE_KEYS, STATUSES, BLOCUS_COLORS, CONFIRM_LOCK_MIN, canReportProblem, typeInSpace, SPACE_LABEL, type Participant, type Person, type Point, type PointInput, type PointStatus, type Problem } from '../shared/model';
 import { occurrences } from '../shared/time';
 
 export const points = Router();
@@ -16,7 +16,7 @@ interface PointRow {
   id: string; mode: Point['mode']; type: Point['type']; title: string; description: string | null;
   lat: number; lng: number; color: string | null; photo: string | null;
   starts_at: number | null; ends_at: number | null; recurrence: Point['recurrence']; recurrence_until: number | null;
-  expires_at: number | null; status: Point['status']; status_at: number | null; parent_id: string | null; material: string | null; flash: number; confirmed_at: number | null; created_by: string; created_at: number; updated_at: number;
+  expires_at: number | null; status: Point['status']; status_at: number | null; parent_id: string | null; material: string | null; flash: number; confirmed_at: number | null; space: string; created_by: string; created_at: number; updated_at: number;
   creator_name?: string | null;
 }
 
@@ -41,7 +41,7 @@ function pledgesFor(pointId?: string): Map<string, Pledges> {
 }
 
 const toDto = (r: PointRow, problems: Problem[] = [], pledges: Pledges = NO_PLEDGES): Point => ({
-  id: r.id, mode: r.mode, type: r.type, title: r.title, description: r.description,
+  id: r.id, space: r.space as Point['space'], mode: r.mode, type: r.type, title: r.title, description: r.description,
   lat: r.lat, lng: r.lng, color: r.color, photo: r.photo,
   startsAt: r.starts_at, endsAt: r.ends_at, recurrence: r.recurrence, recurrenceUntil: r.recurrence_until,
   expiresAt: r.expires_at, status: r.status, createdBy: r.created_by, creatorName: r.creator_name ?? null,
@@ -59,6 +59,12 @@ function parseMaterial(raw: string | null | undefined): string[] {
 
 const SELECT = 'SELECT p.*, d.name AS creator_name FROM points p LEFT JOIN devices d ON d.id = p.created_by';
 const getPoint = (id: string) => db.prepare(`${SELECT} WHERE p.id = ?`).get(id) as PointRow | undefined;
+
+/** Le point, seulement s'il appartient à un espace de l'appareil (sinon : comme s'il n'existait pas). */
+function pointFor(req: express.Request, id: string): PointRow | undefined {
+  const row = getPoint(id);
+  return row && hasSpace(req.device!, row.space) ? row : undefined;
+}
 
 // ---------- Problèmes signalés sur un point ----------
 
@@ -118,6 +124,7 @@ const inputSchema = z.object({
   parentId: z.string().max(40).nullish(),
   material: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
   flash: z.boolean().optional(),
+  space: z.enum(['lfi', 'mvt']).optional(),
 });
 
 /** L'état demandé est-il valable pour ce type de point ? */
@@ -125,17 +132,17 @@ const validStatus = (type: Point['type'], status: unknown): status is PointStatu
   !!STATUSES[type]?.includes(status as PointStatus);
 
 /** Le blocus auquel rattacher un blocage, ou un message d'erreur. */
-function blocusFor(parentId: string | null | undefined): { id: string | null } | string {
+function blocusFor(parentId: string | null | undefined, space = 'mvt'): { id: string | null } | string {
   if (!parentId) return { id: null };
   const parent = getPoint(parentId);
-  if (!parent || parent.type !== 'blocus') return 'Ce blocus n\'existe plus.';
+  if (!parent || parent.type !== 'blocus' || parent.space !== space) return 'Ce blocus n\'existe plus.';
   return { id: parent.id };
 }
 
-type Normalized = Omit<PointRow, 'id' | 'created_by' | 'created_at' | 'updated_at' | 'creator_name' | 'status_at' | 'confirmed_at'>;
+type Normalized = Omit<PointRow, 'id' | 'created_by' | 'created_at' | 'updated_at' | 'creator_name' | 'status_at' | 'confirmed_at' | 'space'>;
 
 /** Valide et normalise les règles métier (horaires, expiration, alertes). */
-function normalize(input: PointInput, existing?: PointRow): Normalized | string {
+function normalize(input: PointInput, existing?: PointRow, space: string = existing?.space ?? 'lfi'): Normalized | string {
   const meta = TYPES[input.type];
   const now = Date.now();
   const mode = meta.alert ? 'event' : input.mode;
@@ -161,7 +168,7 @@ function normalize(input: PointInput, existing?: PointRow): Normalized | string 
     const statuses = STATUSES[input.type];
     let parentId: string | null = null;
     if (input.type === 'blocage') {
-      const b = blocusFor(input.parentId);
+      const b = blocusFor(input.parentId, space);
       if (typeof b === 'string') return b;
       parentId = b.id;
     }
@@ -187,10 +194,11 @@ function normalize(input: PointInput, existing?: PointRow): Normalized | string 
   };
 }
 
-const canEdit = (me: DeviceRow, row: PointRow) => me.role === 'admin' || row.created_by === me.id;
+const canEdit = (me: DeviceRow, row: PointRow) => (me.role === 'admin' && hasSpace(me, row.space)) || row.created_by === me.id;
 
-points.get('/points', (_req, res) => {
-  const rows = db.prepare(`${SELECT} ORDER BY p.created_at`).all() as unknown as PointRow[];
+points.get('/points', (req, res) => {
+  const rows = (db.prepare(`${SELECT} ORDER BY p.created_at`).all() as unknown as PointRow[])
+    .filter((r) => hasSpace(req.device!, r.space));
   const problems = activeProblems();
   const pledges = pledgesFor();
   res.json({ points: rows.map((r) => toDto(r, problems.get(r.id) ?? [], pledges.get(r.id))) });
@@ -199,32 +207,36 @@ points.get('/points', (_req, res) => {
 points.post('/points', (req, res) => {
   const parsed = inputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Données invalides' });
-  const n = normalize(parsed.data);
+  const space = parsed.data.space ?? 'lfi';
+  if (!hasSpace(req.device!, space)) return res.status(403).json({ error: 'Tu n\'as pas accès à cet espace.' });
+  if (!typeInSpace(parsed.data.type, space)) return res.status(400).json({ error: `Ce type de point n'existe pas côté ${SPACE_LABEL[space]}.` });
+  const n = normalize(parsed.data, undefined, space);
   if (typeof n === 'string') return res.status(400).json({ error: n });
   const id = newId();
   const now = Date.now();
   if (n.type === 'blocus' && !n.color) {
     // Une couleur différente pour chaque blocus en cours : ses blocages la reprennent sur la carte.
     const used = new Set((db.prepare(`SELECT COALESCE(color, ?) AS c FROM points
-      WHERE type = 'blocus' AND (expires_at IS NULL OR expires_at > ?)`).all(TYPES.blocus.color, now) as { c: string }[]).map((r) => r.c));
+      WHERE type = 'blocus' AND space = ? AND (expires_at IS NULL OR expires_at > ?)`).all(TYPES.blocus.color, space, now) as { c: string }[]).map((r) => r.c));
     const free = BLOCUS_COLORS.find((c) => !used.has(c)) ?? BLOCUS_COLORS[used.size % BLOCUS_COLORS.length];
     n.color = free === TYPES.blocus.color ? null : free;
   }
   db.prepare(`INSERT INTO points (id, mode, type, title, description, lat, lng, color, photo, starts_at, ends_at,
-              recurrence, recurrence_until, expires_at, status, status_at, parent_id, material, flash, created_by, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+              recurrence, recurrence_until, expires_at, status, status_at, parent_id, material, flash, space, created_by, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, n.mode, n.type, n.title, n.description, n.lat, n.lng, n.color, n.photo, n.starts_at, n.ends_at,
-      n.recurrence, n.recurrence_until, n.expires_at, n.status, n.status ? now : null, n.parent_id, n.material, n.flash, req.device!.id, now, now);
-  broadcast('points', { id, by: req.device!.id, action: 'create', type: n.type, title: n.title, flash: !!n.flash, startsAt: n.starts_at });
+      n.recurrence, n.recurrence_until, n.expires_at, n.status, n.status ? now : null, n.parent_id, n.material, n.flash, space, req.device!.id, now, now);
+  broadcast('points', { id, by: req.device!.id, action: 'create', type: n.type, title: n.title, flash: !!n.flash, startsAt: n.starts_at }, space);
   res.status(201).json({ point: pointDto(id)! });
 });
 
 points.put('/points/:id', (req, res) => {
-  const row = getPoint(req.params.id);
+  const row = pointFor(req, req.params.id);
   if (!row) return res.status(404).json({ error: 'Point introuvable' });
   if (!canEdit(req.device!, row)) return res.status(403).json({ error: 'Seul·e l\'auteur·rice ou un admin peut modifier ce point.' });
   const parsed = inputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Données invalides' });
+  if (!typeInSpace(parsed.data.type, row.space as never)) return res.status(400).json({ error: 'Ce type de point n\'existe pas dans cet espace.' });
   const n = normalize(parsed.data, row);
   if (typeof n === 'string') return res.status(400).json({ error: n });
   const now = Date.now();
@@ -242,29 +254,29 @@ points.put('/points/:id', (req, res) => {
   if (row.type === 'blocus' && n.type !== 'blocus') db.prepare('UPDATE points SET parent_id = NULL WHERE parent_id = ?').run(row.id);
   if (row.type === 'blocus') releaseBlocages();
   if (row.photo && row.photo !== n.photo) removePhoto(row.photo);
-  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' }, row.space);
   res.json({ point: pointDto(row.id)! });
 });
 
 /** État d'un panneau ou d'un blocage : tout le monde peut le mettre à jour sur le terrain. */
 points.patch('/points/:id/status', (req, res) => {
-  const row = getPoint(req.params.id);
+  const row = pointFor(req, req.params.id);
   if (!row || !STATUSES[row.type]) return res.status(404).json({ error: 'Point introuvable' });
   if (!validStatus(row.type, req.body?.status)) return res.status(400).json({ error: 'État invalide' });
   const now = Date.now();
   db.prepare('UPDATE points SET status = ?, status_at = ?, updated_at = ? WHERE id = ?').run(req.body.status, now, now, row.id);
-  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' }, row.space);
   res.json({ point: pointDto(row.id)! });
 });
 
 /** Rattacher un blocage à un blocus (ou le détacher) : tout le monde peut le faire sur le terrain. */
 points.patch('/points/:id/parent', (req, res) => {
-  const row = getPoint(req.params.id);
+  const row = pointFor(req, req.params.id);
   if (!row || row.type !== 'blocage') return res.status(404).json({ error: 'Blocage introuvable' });
-  const b = blocusFor(req.body?.parentId ?? null);
+  const b = blocusFor(req.body?.parentId ?? null, row.space);
   if (typeof b === 'string') return res.status(400).json({ error: b });
   db.prepare('UPDATE points SET parent_id = ?, updated_at = ? WHERE id = ?').run(b.id, Date.now(), row.id);
-  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' }, row.space);
   res.json({ point: pointDto(row.id)! });
 });
 
@@ -272,7 +284,7 @@ points.patch('/points/:id/parent', (req, res) => {
 points.post('/points/:id/extend-flash', (req, res) => {
   const minutes = z.number().int().min(5).max(240).safeParse(req.body?.minutes);
   if (!minutes.success) return res.status(400).json({ error: 'Durée invalide' });
-  const row = getPoint(req.params.id);
+  const row = pointFor(req, req.params.id);
   if (!row || !row.flash || row.ends_at == null) return res.status(404).json({ error: 'Flash introuvable' });
   if (!canEdit(req.device!, row)) return res.status(403).json({ error: 'Seul·e l\'auteur·rice du flash ou un admin peut le prolonger.' });
   const now = Date.now();
@@ -280,7 +292,7 @@ points.post('/points/:id/extend-flash', (req, res) => {
   const end = row.ends_at + minutes.data * 60_000;
   if (end - (row.starts_at ?? now) > 24 * 3600_000) return res.status(400).json({ error: 'Un flash ne peut pas durer plus de 24 h.' });
   db.prepare('UPDATE points SET ends_at = ?, expires_at = ?, updated_at = ? WHERE id = ?').run(end, end, now, row.id);
-  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' }, row.space);
   res.json({ point: pointDto(row.id)! });
 });
 
@@ -288,20 +300,20 @@ points.post('/points/:id/extend-flash', (req, res) => {
 points.post('/points/:id/extend', (req, res) => {
   const minutes = z.number().int().min(5).max(240).safeParse(req.body?.minutes);
   if (!minutes.success) return res.status(400).json({ error: 'Durée invalide' });
-  const row = getPoint(req.params.id);
+  const row = pointFor(req, req.params.id);
   if (!row || !TYPES[row.type].alert) return res.status(404).json({ error: 'Alerte introuvable' });
   const locked = confirmLocked(row.created_at, row.confirmed_at);
   if (locked) return res.status(429).json({ error: locked });
   const now = Date.now();
   const exp = Math.max(row.expires_at ?? 0, now) + minutes.data * 60_000;
   db.prepare('UPDATE points SET expires_at = ?, ends_at = ?, confirmed_at = ?, updated_at = ? WHERE id = ?').run(exp, exp, now, now, row.id);
-  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' }, row.space);
   res.json({ point: pointDto(row.id)! });
 });
 
 /** Terminer un événement maintenant (auteur·rice ou admin) : il quitte la carte mais reste dans l'agenda. */
 points.post('/points/:id/finish', (req, res) => {
-  const row = getPoint(req.params.id);
+  const row = pointFor(req, req.params.id);
   if (!row || row.mode !== 'event' || TYPES[row.type].alert) return res.status(404).json({ error: 'Événement introuvable' });
   if (!canEdit(req.device!, row)) return res.status(403).json({ error: 'Seul·e l\'auteur·rice ou un admin peut terminer cet événement.' });
   const now = Date.now();
@@ -314,7 +326,7 @@ points.post('/points/:id/finish', (req, res) => {
   }
   db.prepare('UPDATE problems SET resolved_at = ?, resolved_by = ? WHERE point_id = ? AND resolved_at IS NULL').run(now, req.device!.id, row.id);
   if (row.type === 'blocus') releaseBlocages();
-  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' }, row.space);
   res.json({ point: pointDto(row.id)! });
 });
 
@@ -325,7 +337,7 @@ points.post('/points/:id/finish', (req, res) => {
 points.post('/points/:id/participate', (req, res) => {
   const body = z.object({ on: z.boolean(), arriveAt: z.number().int().nullish() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Requête invalide' });
-  const row = getPoint(req.params.id);
+  const row = pointFor(req, req.params.id);
   if (!row || row.mode !== 'event' || TYPES[row.type].alert) return res.status(404).json({ error: 'Événement introuvable' });
   const arriveAt = body.data.arriveAt ?? null;
   if (arriveAt != null && (arriveAt < Date.now() - 86400_000 || arriveAt > Date.now() + 400 * 86400_000)) {
@@ -336,7 +348,7 @@ points.post('/points/:id/participate', (req, res) => {
                 ON CONFLICT (point_id, device_id, kind, item) DO UPDATE SET arrive_at = excluded.arrive_at`)
       .run(row.id, req.device!.id, arriveAt, Date.now());
   } else db.prepare("DELETE FROM pledges WHERE point_id = ? AND device_id = ? AND kind = 'participe'").run(row.id, req.device!.id);
-  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' }, row.space);
   res.json({ point: pointDto(row.id)! });
 });
 
@@ -344,12 +356,12 @@ points.post('/points/:id/participate', (req, res) => {
 points.post('/points/:id/provide', (req, res) => {
   const body = z.object({ item: z.string().trim().min(1).max(40), on: z.boolean() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Requête invalide' });
-  const row = getPoint(req.params.id);
+  const row = pointFor(req, req.params.id);
   if (!row || row.mode !== 'event' || TYPES[row.type].alert) return res.status(404).json({ error: 'Événement introuvable' });
   if (!parseMaterial(row.material).includes(body.data.item)) return res.status(400).json({ error: 'Ce matériel n\'est pas dans la liste.' });
   if (body.data.on) db.prepare("INSERT OR IGNORE INTO pledges (point_id, device_id, kind, item, created_at) VALUES (?, ?, 'fournit', ?, ?)").run(row.id, req.device!.id, body.data.item, Date.now());
   else db.prepare("DELETE FROM pledges WHERE point_id = ? AND device_id = ? AND kind = 'fournit' AND item = ?").run(row.id, req.device!.id, body.data.item);
-  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' });
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'update' }, row.space);
   res.json({ point: pointDto(row.id)! });
 });
 
@@ -360,23 +372,24 @@ points.post('/points/:id/problems', (req, res) => {
     durationMinutes: z.number().int().min(5).max(24 * 60),
   }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.issues[0]?.message ?? 'Données invalides' });
-  const row = getPoint(req.params.id);
+  const row = pointFor(req, req.params.id);
   if (!row) return res.status(404).json({ error: 'Point introuvable' });
   if (TYPES[row.type].alert) return res.status(400).json({ error: 'C\'est déjà une alerte : prolonge-la plutôt.' });
   if (!canReportProblem(row.type)) return res.status(400).json({ error: 'On ne signale un problème que sur un blocage.' });
   const now = Date.now();
   db.prepare('INSERT INTO problems (id, point_id, message, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(newId(), row.id, body.data.message, req.device!.id, now, now + body.data.durationMinutes * 60_000);
-  broadcast('points', { id: row.id, by: req.device!.id, action: 'problem', title: row.title });
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'problem', title: row.title }, row.space);
   res.status(201).json({ point: pointDto(row.id)! });
 });
 
 /** Problème réglé : tout le monde peut le lever. */
 points.post('/problems/:id/resolve', (req, res) => {
   const pr = db.prepare('SELECT point_id FROM problems WHERE id = ? AND resolved_at IS NULL').get(req.params.id) as { point_id: string } | undefined;
-  if (!pr) return res.status(404).json({ error: 'Problème introuvable ou déjà réglé' });
+  const owner = pr && pointFor(req, pr.point_id);
+  if (!pr || !owner) return res.status(404).json({ error: 'Problème introuvable ou déjà réglé' });
   db.prepare('UPDATE problems SET resolved_at = ?, resolved_by = ? WHERE id = ?').run(Date.now(), req.device!.id, req.params.id);
-  broadcast('points', { id: pr.point_id, by: req.device!.id, action: 'update' });
+  broadcast('points', { id: pr.point_id, by: req.device!.id, action: 'update' }, owner.space);
   res.json({ point: pointDto(pr.point_id)! });
 });
 
@@ -386,24 +399,25 @@ points.post('/problems/:id/extend', (req, res) => {
   if (!minutes.success) return res.status(400).json({ error: 'Durée invalide' });
   const pr = db.prepare('SELECT point_id, expires_at, created_at, confirmed_at FROM problems WHERE id = ? AND resolved_at IS NULL').get(req.params.id) as
     { point_id: string; expires_at: number; created_at: number; confirmed_at: number | null } | undefined;
-  if (!pr) return res.status(404).json({ error: 'Problème introuvable ou déjà réglé' });
+  const owner = pr && pointFor(req, pr.point_id);
+  if (!pr || !owner) return res.status(404).json({ error: 'Problème introuvable ou déjà réglé' });
   const locked = confirmLocked(pr.created_at, pr.confirmed_at);
   if (locked) return res.status(429).json({ error: locked });
   const now = Date.now();
   const exp = Math.max(pr.expires_at, now) + minutes.data * 60_000;
   db.prepare('UPDATE problems SET expires_at = ?, confirmed_at = ? WHERE id = ?').run(exp, now, req.params.id);
-  broadcast('points', { id: pr.point_id, by: req.device!.id, action: 'update' });
+  broadcast('points', { id: pr.point_id, by: req.device!.id, action: 'update' }, owner.space);
   res.json({ point: pointDto(pr.point_id)! });
 });
 
 points.delete('/points/:id', (req, res) => {
-  const row = getPoint(req.params.id);
+  const row = pointFor(req, req.params.id);
   if (!row) return res.status(404).json({ error: 'Point introuvable' });
   if (!canEdit(req.device!, row)) return res.status(403).json({ error: 'Seul·e l\'auteur·rice ou un admin peut supprimer ce point.' });
   db.prepare('DELETE FROM points WHERE id = ?').run(row.id);
   db.prepare('UPDATE points SET parent_id = NULL WHERE parent_id = ?').run(row.id);
   if (row.photo) removePhoto(row.photo);
-  broadcast('points', { id: row.id, by: req.device!.id, action: 'delete' });
+  broadcast('points', { id: row.id, by: req.device!.id, action: 'delete' }, row.space);
   res.json({ ok: true });
 });
 
@@ -434,6 +448,8 @@ points.post('/photos', express.raw({ type: ['image/jpeg', 'image/png', 'image/we
 
 points.get('/photos/:name', (req, res) => {
   if (!PHOTO_RE.test(req.params.name)) return res.status(404).end();
+  const of = db.prepare('SELECT space FROM points WHERE photo = ?').get(req.params.name) as { space: string } | undefined;
+  if (of && !hasSpace(req.device!, of.space)) return res.status(404).end();
   res.set('Cache-Control', 'private, max-age=604800, immutable');
   res.sendFile(path.join(UPLOAD_DIR, req.params.name), (err) => {
     if (err && !res.headersSent) res.status(404).end();
@@ -468,7 +484,7 @@ export function releaseBlocages() {
   if (!released.length) return;
   const upd = db.prepare("UPDATE points SET status = 'vide', status_at = ?, updated_at = ? WHERE id = ?");
   for (const id of released) upd.run(now, now, id);
-  broadcast('points', { id: released[0], action: 'update' });
+  broadcast('points', { id: released[0], action: 'update' }, 'mvt');
 }
 
 // ---------- Ménage périodique ----------

@@ -7,7 +7,7 @@ import {
   h, icon, clear, toast, toDateInput, toTimeInput, fromInputs, addDays, startOfDay, inkFor, isAllDay,
 } from './ui';
 import {
-  TYPES, ALERT_ICONS, MATERIAL_PRESETS, FLASH_STARTS, FLASH_DURATIONS, MATERIAL_DEFAULT, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, STATUS_HINT, STATUSES, ALERT_DURATIONS, ALERT_PRESETS,
+  TYPES, ALERT_ICONS, materialPresets, FLASH_STARTS, FLASH_DURATIONS, COLOR_CHOICES, RECURRENCE_LABEL, STATUS_LABEL, STATUS_HINT, STATUSES, ALERT_DURATIONS, alertPresets, typeInSpace,
   type Mode, type PointType, type Recurrence, type PointStatus, type Point, type PointInput, type AlertType,
 } from '../../shared/model';
 import { isActive, nextOccurrence } from '../../shared/time';
@@ -50,7 +50,7 @@ export const field = (label: string, control: Node, hint?: string, optional = fa
 function materialPicker(d: { type: PointType; material: string[] }, accent: string) {
   const wrap = h('div', { class: 'material-pick' });
   const render = () => {
-    const suggestions = MATERIAL_PRESETS[d.type] ?? MATERIAL_DEFAULT;
+    const suggestions = materialPresets(d.type, store.space);
     const all = [...suggestions, ...d.material.filter((m) => !suggestions.includes(m))];
     const input = h('input', { class: 'input', type: 'text', maxlength: '40', placeholder: 'Autre chose ?', enterkeyhint: 'done' }) as HTMLInputElement;
     const add = () => {
@@ -228,7 +228,8 @@ function openPointForm(d: Draft) {
   const submit = h('button', { class: 'btn btn-primary btn-block', type: 'button' }, icon('check', 20), h('span', null, isEdit ? 'Enregistrer' : 'Ajouter le point')) as HTMLButtonElement;
 
   const render = () => {
-    const typesForMode = (d.mode === 'event' ? EVENT_ORDER : FIXE_ORDER).filter((t) => TYPES[t].modes.includes(d.mode));
+    // Seulement les types de l'espace en cours (rien du collage côté Mouvement, rien des blocus côté LFI).
+    const typesForMode = (d.mode === 'event' ? EVENT_ORDER : FIXE_ORDER).filter((t) => TYPES[t].modes.includes(d.mode) && typeInSpace(t, store.space));
     if (!typesForMode.includes(d.type)) d.type = typesForMode[0];
     const statuses = STATUSES[d.type];
     if (statuses && !statuses.includes(d.status)) d.status = statuses[0];
@@ -372,7 +373,7 @@ function openPointForm(d: Draft) {
     busy(submit, true, 'Envoi…');
     try {
       input.photo = await uploadIfNeeded(d.photo);
-      const { point } = d.id ? await api.updatePoint(d.id, input) : await api.createPoint(input);
+      const { point } = d.id ? await api.updatePoint(d.id, input) : await api.createPoint({ ...input, space: store.space });
       store.upsert(point);
       sheet.close();
       toast(isEdit ? 'Point mis à jour' : 'Point ajouté sur la carte', 'ok');
@@ -396,7 +397,7 @@ export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos
     source: existing || presetPos ? 'map' : 'gps',
     locating: false,
     duration: 30 as number,
-    title: existing?.title ?? ALERT_PRESETS[type][0],
+    title: existing?.title ?? alertPresets(type, store.space)[0] ?? meta.label,
     description: existing?.description ?? '',
     photo: { existing: existing?.photo ?? null, blob: null as Blob | null },
   };
@@ -443,7 +444,8 @@ export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos
   const titleInput = h('input', { class: 'input', type: 'text', maxlength: '80', value: state.title, oninput: (e: Event) => (state.title = (e.target as HTMLInputElement).value) }) as HTMLInputElement;
 
   // Depuis le bouton Danger : choisir entre un danger « classique » et la présence de police / CRS.
-  const switchToPolice = !existing && (type === 'danger' || type === 'police') ? segmented<AlertType>([
+  // Police / CRS n'existe que côté Mouvement.
+  const switchToPolice = !existing && (type === 'danger' || type === 'police') && typeInSpace('police', store.space) ? segmented<AlertType>([
     { value: 'danger', label: 'Danger', icon: 'siren' },
     { value: 'police', label: 'Police / CRS', icon: 'police' },
   ], type, (t) => { sheet.close(); openAlertForm(t, undefined, state.pos ?? undefined); }, `seg-alert seg-${type}`) : null;
@@ -452,7 +454,7 @@ export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos
     switchToPolice,
     locCard,
     h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Quoi ?'),
-      chips(ALERT_PRESETS[type].map((p) => ({ value: p, label: p, icon: ALERT_ICONS[type][p] })), ALERT_PRESETS[type].includes(state.title) ? state.title : null, (v) => { state.title = v; titleInput.value = v; }, meta.color),
+      chips(alertPresets(type, store.space).map((p) => ({ value: p, label: p, icon: ALERT_ICONS[type][p] })), alertPresets(type, store.space).includes(state.title) ? state.title : null, (v) => { state.title = v; titleInput.value = v; }, meta.color),
       titleInput),
     existing ? null : h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Visible pendant'),
       chips(ALERT_DURATIONS.map((m) => ({ value: m, label: durLabel(m) })), state.duration, (v) => { state.duration = v; setSubmitLabel(); }, meta.color)),
@@ -474,7 +476,7 @@ export function openAlertForm(type: AlertType, existing?: Point, presetPos?: Pos
     busy(submit, true, 'Envoi…');
     try {
       input.photo = await uploadIfNeeded(state.photo);
-      const { point } = existing ? await api.updatePoint(existing.id, input) : await api.createPoint(input);
+      const { point } = existing ? await api.updatePoint(existing.id, input) : await api.createPoint({ ...input, space: store.space });
       store.upsert(point);
       sheet.close();
       toast(existing ? 'Alerte mise à jour' : `${meta.label} signalé${type === 'police' ? 'e' : ''} pour ${durLabel(state.duration)}`, 'ok');

@@ -6,6 +6,12 @@ import '@fontsource/inter/700.css';
 import '@fontsource/barlow-condensed/600.css';
 import '@fontsource/barlow-condensed/700.css';
 import '@fontsource/barlow-condensed/800.css';
+// Espace Mouvement : esprit journal militant (titres condensés, menus en capitales, texte à empattements).
+import '@fontsource/fjalla-one/400.css';
+import '@fontsource/lato/400.css';
+import '@fontsource/lato/700.css';
+import '@fontsource/lato/900.css';
+import '@fontsource/pt-serif/400.css';
 import './styles.css';
 
 import { api, setUnauthorizedHandler, ApiError } from './api';
@@ -20,7 +26,7 @@ import { openSheet } from './sheet';
 import { h, icon, toast, isDesktop, time } from './ui';
 import { quietPosition, walkMinutes } from './geo';
 import { chips } from './forms';
-import { TYPES, type Point } from '../../shared/model';
+import { TYPES, SPACES, SPACE_LABEL, type Point, type Space } from '../../shared/model';
 
 const app = document.getElementById('app')!;
 
@@ -44,10 +50,12 @@ async function boot() {
   startApp();
 }
 
-function brand(big = false) {
-  return h('div', { class: `brand${big ? ' brand-big' : ''}` },
+/** Marque : neutre sur les écrans d'accès (aucune référence à l'un ou l'autre espace), propre à l'espace dans l'app. */
+function brand(big = false, space?: Space) {
+  const sub = space === 'lfi' ? 'carte militante' : space === 'mvt' ? 'infos & actions' : 'accès protégé';
+  return h('div', { class: `brand${big ? ' brand-big' : ''}${space ? ` brand-${space}` : ' brand-neutral'}` },
     h('span', { class: 'brand-mark' }, icon('map-pin', big ? 34 : 20, 2.6)),
-    h('span', { class: 'brand-text' }, h('strong', null, 'Terrain'), h('small', null, 'carte militante')),
+    h('span', { class: 'brand-text' }, h('strong', null, 'Terrain'), h('small', null, sub)),
   );
 }
 
@@ -58,9 +66,9 @@ function splash(...children: Node[]) {
 function lockedScreen() {
   splash(
     h('h1', { class: 'splash-title' }, 'Accès sur invitation'),
-    h('p', { class: 'splash-text' }, 'Cette app est réservée aux militant·es du groupe. Pour entrer, demande à un·e responsable de te montrer son QR code, puis scanne-le avec l\'appareil photo de ton téléphone.'),
+    h('p', { class: 'splash-text' }, 'Cette app est privée. Pour entrer, demande à une personne qui y a déjà accès de te montrer son QR code, puis scanne-le avec l\'appareil photo de ton téléphone.'),
     h('div', { class: 'splash-steps' },
-      step('1', 'Un·e responsable génère un QR code'),
+      step('1', 'Une personne du groupe génère un QR code'),
       step('2', 'Tu le scannes avec ton téléphone'),
       step('3', 'Tu indiques ton prénom : c\'est parti'),
     ),
@@ -86,8 +94,8 @@ function joinScreen(token: string) {
     }
   } }, h('label', { class: 'sr-only' }, 'Prénom ou pseudo'), input, btn);
   splash(
-    h('h1', { class: 'splash-title' }, 'Bienvenue dans l\'équipe'),
-    h('p', { class: 'splash-text' }, 'Tu as été invité·e. Choisis le nom sous lequel l\'équipe te verra : un prénom ou un pseudo suffit.'),
+    h('h1', { class: 'splash-title' }, 'Bienvenue'),
+    h('p', { class: 'splash-text' }, 'Tu as été invité·e. Choisis le nom sous lequel le groupe te verra : un prénom ou un pseudo suffit.'),
     form,
     h('p', { class: 'splash-fine' }, 'Cet appareil sera mémorisé : pas de mot de passe à retenir.'),
   );
@@ -113,6 +121,10 @@ const NAV: { view: View; label: string; icon: string }[] = [
 
 function startApp() {
   setUnauthorizedHandler(() => location.reload());
+  store.initSpace();
+  const mvt = store.space === 'mvt';
+  // Le trajet de collage n'existe que côté LFI.
+  const nav = NAV.filter((n) => n.view !== 'route' || !mvt);
   const teamLabel = store.me.role === 'membre' ? 'Profil' : 'Équipe';
 
   const navBtn = (n: (typeof NAV)[number], cls: string) => h('button', {
@@ -156,8 +168,14 @@ function startApp() {
   const mapEl = h('div', { id: 'map', 'aria-label': 'Carte' });
   const shell = h('div', { class: 'app' },
     h('header', { class: 'topbar' },
-      brand(),
-      h('nav', { class: 'toptabs', 'aria-label': 'Sections' }, NAV.filter((n) => n.view !== 'map').map((n) => navBtn(n, 'toptab'))),
+      brand(false, store.space),
+      // Bascule d'espace : seulement pour qui a accès aux deux (le propriétaire, et qui il veut).
+      store.me.spaces.length > 1 ? h('div', { class: 'space-switch', role: 'group', 'aria-label': 'Espace' },
+        SPACES.map((s) => h('button', {
+          type: 'button', class: s === store.space ? 'on' : '', 'aria-pressed': String(s === store.space),
+          onclick: () => store.switchSpace(s),
+        }, s === 'lfi' ? 'LFI' : 'Mvt'))) : null,
+      h('nav', { class: 'toptabs', 'aria-label': 'Sections' }, nav.filter((n) => n.view !== 'map').map((n) => navBtn(n, 'toptab'))),
       h('button', { class: 'settings-btn', type: 'button', onclick: openSettings, 'aria-label': 'Réglages', title: 'Réglages' }, icon('settings', 20)),
       h('button', { class: 'me-chip', type: 'button', onclick: () => store.setView('team'), title: 'Mon accès' },
         h('span', { class: 'avatar tiny' }, store.me.name.slice(0, 1).toUpperCase()),
@@ -172,7 +190,7 @@ function startApp() {
           filterChip('event', 'Événements', 'Events', '#FF7A00', 'calendar'),
           filterChip('flash', 'Flash', 'Flash', '#C99700', 'zap'),
           filterChip('alert', 'Alertes', 'Alertes', '#F53B3B', 'triangle-alert'),
-          blocusChip,
+          mvt ? blocusChip : null,
           todayChip,
         ),
         h('button', { class: 'map-btn locate', type: 'button', 'aria-label': 'Me localiser', title: 'Me localiser', onclick: () => locateMe() }, icon('locate-fixed', 22)),
@@ -184,7 +202,7 @@ function startApp() {
         ),
       ),
     ),
-    h('nav', { class: 'bottomnav', 'aria-label': 'Sections' }, NAV.map((n) => navBtn(n, 'navbtn'))),
+    h('nav', { class: 'bottomnav', 'aria-label': 'Sections' }, nav.map((n) => navBtn(n, 'navbtn'))),
   );
   app.replaceChildren(shell);
 
@@ -193,7 +211,7 @@ function startApp() {
     if (!isDesktop()) store.setView('map');
     setTimeout(() => { flyTo(o.point); openDetail(o.point); }, isDesktop() ? 0 : 280);
   });
-  mountRoute(panels.route);
+  if (!mvt) mountRoute(panels.route);
   mountTeam(panels.team);
 
   const applyView = () => {
@@ -230,7 +248,7 @@ function connectStream() {
   const es = new EventSource('/api/stream');
   let t: number | undefined;
   es.addEventListener('points', (ev) => {
-    const data = JSON.parse((ev as MessageEvent).data || '{}') as { id?: string; by?: string; action?: string; type?: string; title?: string; flash?: boolean; startsAt?: number };
+    const data = JSON.parse((ev as MessageEvent).data || '{}') as { id?: string; by?: string; action?: string; type?: string; title?: string; flash?: boolean; startsAt?: number; space?: string };
     // Toucher la notification : on montre le point sur la carte et on ouvre sa fiche.
     const show = data.id ? async () => {
       let p = store.get(data.id!);
@@ -243,6 +261,7 @@ function connectStream() {
     clearTimeout(t);
     t = window.setTimeout(() => store.refresh().catch(() => {}), 300);
     if (data.by === store.me.id) return;
+    if (data.space && data.space !== store.space) return; // l'autre espace : rien ici
     const isAlert = data.action === 'create' && (data.type === 'warning' || data.type === 'danger' || data.type === 'police');
     const isFlash = data.action === 'create' && !!data.flash;
     const isProblem = data.action === 'problem';
@@ -282,7 +301,7 @@ async function shouldNotify(pointId?: string): Promise<{ ok: boolean; minutes?: 
   if (pointId && !p) { await store.refresh().catch(() => {}); p = store.get(pointId); }
   const limit = notifRadius();
   if (limit < 0) return { ok: false }; // « Aucune » : plus aucune notification
-  if (!p) return { ok: true };
+  if (!p) return { ok: !pointId }; // point introuvable dans l'espace en cours : pas de notification
   const me = store.me.id;
   if (p.type === 'blocage' && p.parentId) {
     const blocus = store.get(p.parentId);
@@ -331,16 +350,25 @@ function openSettings() {
 }
 
 function welcome() {
-  try { if (localStorage.getItem('terrain:welcomed')) return; localStorage.setItem('terrain:welcomed', '1'); } catch { return; }
+  const key = `terrain:welcomed:${store.space}`;
+  try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch { return; }
+  const mvt = store.space === 'mvt';
   const tip = (ico: string, cls: string, title: string, text: string) => h('li', { class: 'tip' }, h('span', { class: `tip-ico ${cls}` }, icon(ico, 20)), h('div', null, h('strong', null, title), h('span', null, text)));
   const s = openSheet({
     title: `Salut ${store.me.name} !`,
     body: h('div', null,
+      store.me.spaces.length > 1 ? h('p', { class: 'muted' }, `Tu es dans l'espace ${SPACE_LABEL[store.space]}. Le bouton LFI / Mvt en haut permet de changer.`) : null,
       h('ul', { class: 'tips' },
-        tip('plus', 'tip-add', 'Ajouter un point', 'Panneau, AG, tractage, local… vise l\'endroit sur la carte, puis remplis la fiche.'),
-        tip('triangle-alert', 'tip-warning', 'Warning & Danger', 'Deux boutons pour signaler un problème en 2 gestes. L\'alerte disparaît toute seule.'),
+        mvt
+          ? tip('plus', 'tip-add', 'Ajouter un point', 'Blocus, blocage, AG, rassemblement, dépôt de matériel… vise l\'endroit sur la carte, puis remplis la fiche.')
+          : tip('plus', 'tip-add', 'Ajouter un point', 'Panneau, AG, tractage, local… vise l\'endroit sur la carte, puis remplis la fiche.'),
+        tip('triangle-alert', 'tip-warning', 'Warning & Danger', mvt
+          ? 'Deux boutons pour signaler un problème en 2 gestes, et la police / CRS depuis Danger. L\'alerte disparaît toute seule.'
+          : 'Deux boutons pour signaler un problème en 2 gestes. L\'alerte disparaît toute seule.'),
         tip('calendar-days', 'tip-agenda', 'Agenda', 'Tous les événements de la semaine, avec leurs horaires.'),
-        tip('route', 'tip-route', 'Trajet de collage', 'Choisis les panneaux, l\'app calcule le chemin le plus court et l\'ouvre dans Google Maps.'),
+        mvt
+          ? tip('flame', 'tip-route', 'Blocus', 'Le RDV, puis les blocages rattachés : qui tient quoi, et les problèmes en direct.')
+          : tip('route', 'tip-route', 'Trajet de collage', 'Choisis les panneaux, l\'app calcule le chemin le plus court et l\'ouvre dans Google Maps.'),
       ),
       h('p', { class: 'muted' }, 'Astuce : ajoute l\'app à ton écran d\'accueil (menu du navigateur → « Sur l\'écran d\'accueil »).'),
     ),
