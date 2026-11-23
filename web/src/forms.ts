@@ -1,5 +1,5 @@
 import { api, compressImage, photoUrl, ApiError } from './api';
-import { store } from './store';
+import { store, spaceColor } from './store';
 import { openSheet, closeSheet } from './sheet';
 import { pickLocation, flyTo, showMe } from './map';
 import { getPosition, type Pos } from './geo';
@@ -214,7 +214,7 @@ function draftFrom(p: Point | null, pos: Pos, formMode: FormMode = 'fixe', prese
 }
 
 export async function newPointFlow(mode: FormMode = 'fixe', preset: Preset = {}) {
-  const color = preset.type ? TYPES[preset.type].color : '#7B13D6';
+  const color = preset.type ? TYPES[preset.type].color : spaceColor();
   const pos = await pickLocation({ title: preset.type ? `Nouveau ${TYPES[preset.type].label.toLowerCase()}` : 'Nouveau point', color });
   if (!pos) return;
   openPointForm(draftFrom(null, pos, mode, preset));

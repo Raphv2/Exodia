@@ -213,7 +213,7 @@ function startApp() {
       h('div', { class: 'map-wrap' },
         mapEl,
         h('div', { class: 'map-filters', role: 'toolbar', 'aria-label': 'Filtres' },
-          filterChip('fixe', 'Points fixes', 'Fixes', '#7B13D6', 'map-pin'),
+          filterChip('fixe', 'Points fixes', 'Fixes', mvt ? '#141414' : '#7B13D6', 'map-pin'),
           filterChip('event', 'Événements', 'Events', '#FF7A00', 'calendar'),
           filterChip('flash', 'Flash', 'Flash', '#C99700', 'zap'),
           filterChip('alert', 'Alertes', 'Alertes', '#F53B3B', 'triangle-alert'),

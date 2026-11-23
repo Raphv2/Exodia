@@ -1,5 +1,5 @@
 import L from 'leaflet';
-import { store, paintOf, type Group } from './store';
+import { store, paintOf, spaceColor, type Group } from './store';
 import { TYPES, iconOf, type Point } from '../../shared/model';
 import { isActive, occurrences, liveProblems } from '../../shared/time';
 import { h, icon, iconHtml, startOfDay, addDays, toast } from './ui';
@@ -187,7 +187,7 @@ export function pickLocation(opts: { title: string; color?: string; initial?: Po
     const clickMove = (e: L.LeafletMouseEvent) => map.panTo(e.latlng);
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && finish(null);
 
-    const overlay = h('div', { class: 'picker', style: { '--c': opts.color ?? '#7B13D6' } as Record<string, string> },
+    const overlay = h('div', { class: 'picker', style: { '--c': opts.color ?? spaceColor() } as Record<string, string> },
       h('div', { class: 'picker-pin' }, icon('map-pin', 30, 2.4)),
       h('div', { class: 'picker-shadow' }),
     );

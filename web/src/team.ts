@@ -1,5 +1,5 @@
 import { api, ApiError } from './api';
-import { store } from './store';
+import { store, spaceColor } from './store';
 import { openSheet, confirmSheet } from './sheet';
 import { chips, field } from './forms';
 import { h, icon, clear, toast, relative } from './ui';
@@ -165,7 +165,7 @@ function showInvite(res: CreatedInvite) {
 
   openSheet({
     title: 'Invitation',
-    accent: '#7B13D6',
+    accent: spaceColor(),
     onClose: () => clearInterval(timer),
     body: h('div', { class: 'invite-show' },
       h('p', { class: 'invite-who' }, `${ROLE_LABEL[res.invite.role]} · ${res.invite.maxUses === 1 ? '1 personne' : `${res.invite.maxUses} personnes`}`),

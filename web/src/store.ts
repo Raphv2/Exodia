@@ -92,6 +92,9 @@ class Store {
 
 export const store = new Store();
 
+/** Couleur principale de l'espace en cours (violet LFI, rouge Mouvement). */
+export const spaceColor = () => (store.space === 'mvt' ? '#a30006' : '#7B13D6');
+
 /** Couleur d'un point et de son icône. Un blocage rattaché prend la couleur de son blocus. */
 export function paintOf(p: Point): { color: string; ink: string } {
   const src = p.type === 'blocage' && p.parentId ? store.points.find((x) => x.id === p.parentId) ?? p : p;
