@@ -10,10 +10,10 @@
 		max_size 20MB
 	}
 	# En-têtes de réponse. L'app envoie déjà les en-têtes de sécurité (CSP, HSTS, nosniff,
-	# X-Frame-Options...) : le « ? » ne les pose QUE s'ils manquent (par exemple sur la page
-	# d'erreur 502 de Caddy quand l'app est arrêtée), donc jamais en double ni avec une autre
-	# valeur. HSTS : même valeur que l'app (1 an). Le « - » retire les en-têtes qui annoncent
-	# le logiciel utilisé (Server, Via).
+	# X-Frame-Options...) : le « ? » ne les pose QUE s'ils manquent (filet de sécurité si une
+	# version de l'app les oubliait), donc jamais en double ni avec une autre valeur.
+	# HSTS : même valeur que l'app (1 an). Le « - » retire les en-têtes qui annoncent le
+	# logiciel utilisé (Server, Via).
 	header {
 		?Strict-Transport-Security "max-age=31536000"
 		?X-Content-Type-Options "nosniff"
