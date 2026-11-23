@@ -16,9 +16,13 @@ export default defineConfig({
   build: { outDir: '../dist/web', emptyOutDir: true, chunkSizeWarningLimit: 800 },
   // Serveur de développement (npm run dev) :
   server: {
-    // host: true : écoute sur toutes les interfaces réseau, pour ouvrir l'app depuis un téléphone
-    // sur le même Wi-Fi (http://adresse-IP-du-PC:5180). À éviter sur un réseau public.
-    host: true,
+    // Adresse d'écoute : par défaut 'localhost', donc l'interface n'est joignable QUE depuis ce PC
+    // (rien d'exposé sur le réseau, même sur un Wi-Fi public).
+    // Pour tester depuis un téléphone sur le même Wi-Fi, ouvrir volontairement au réseau local :
+    //   VITE_HOST=0.0.0.0 npm run dev        (bash, macOS, Linux)
+    //   $env:VITE_HOST='0.0.0.0'; npm run dev (PowerShell)
+    // puis ouvrir sur le téléphone l'adresse « Network » affichée par Vite (http://IP-du-PC:5180).
+    host: process.env.VITE_HOST ?? 'localhost',
     // Port de l'interface en développement.
     port: 5180,
     // Proxy : toute requête /api/... reçue par Vite est relayée au serveur Express (port 3180).

@@ -10,7 +10,13 @@ data-*
 # Historique Git et réglages de Claude Code : inutiles dans l'image.
 .git
 .claude
-# Journaux, fichier de variables secrètes .env, sauvegardes téléchargées.
+# Journaux, fichiers de variables secrètes (.env, .env.local…), clés et certificats,
+# sauvegardes téléchargées (sauvegardes-terrain, et toute variante).
 *.log
 .env
-sauvegardes-terrain
+.env.*
+*.pem
+*.key
+sauvegardes*
+# Documentation interne : inutile dans l'image.
+docs/

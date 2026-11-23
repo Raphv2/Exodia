@@ -5,8 +5,15 @@ node_modules/
 dist/
 # Données locales : base SQLite et photos (données personnelles, jamais dans le dépôt).
 data/
-# Variables secrètes éventuelles, puis journaux.
+# Copies locales des données (data-avant-test, data-prod…).
+data-*
+# Variables secrètes éventuelles (.env, .env.local, .env.prod…), sauf le modèle .env.example
+# (le « ! » annule l'exclusion), puis clés et certificats, puis journaux.
 .env
+.env.*
+!.env.example
+*.pem
+*.key
 *.log
 # Sauvegardes téléchargées depuis le serveur.
 sauvegardes-terrain/

@@ -36,7 +36,7 @@ npm install
 npm run dev
 ```
 
-- Interface : http://localhost:5180 (accessible aussi depuis un téléphone sur le même Wi-Fi, via l'adresse « Network » affichée par Vite).
+- Interface : http://localhost:5180 (joignable depuis ce PC seulement). Pour l'ouvrir depuis un téléphone sur le même Wi-Fi, lance `VITE_HOST=0.0.0.0 npm run dev` (PowerShell : `$env:VITE_HOST='0.0.0.0'; npm run dev`) puis utilise l'adresse « Network » affichée par Vite. À éviter sur un réseau public.
 - API : http://localhost:3180
 
 Au premier lancement, la console affiche un **lien d'invitation admin** (valable 24 h, usage unique). Ouvre-le sur l'appareil qui sera admin. Tant qu'aucun admin n'existe, un nouveau lien est créé à chaque redémarrage et l'ancien est annulé.
