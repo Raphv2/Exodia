@@ -160,6 +160,8 @@ votes.post('/points/:id/votes', (req, res) => {
   if (!body.success) return res.status(400).json({ error: body.error.issues[0]?.message ?? 'Données invalides' });
   const ag = getPoint(req.params.id);
   if (!ag || !hasSpace(req.device!, ag.space) || ag.type !== 'ag') return res.status(404).json({ error: 'AG introuvable' });
+  // Les votes n'existent que côté Mouvement.
+  if (ag.space !== 'mvt') return res.status(400).json({ error: 'Les votes ne sont disponibles que côté Mouvement.' });
   if (!canRun(req.device!, ag)) return res.status(403).json({ error: 'Seul·e l\'organisateur·rice de l\'AG ou un admin peut lancer un vote.' });
   const id = newId();
   db.prepare('INSERT INTO votes (id, point_id, question, options, code, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
