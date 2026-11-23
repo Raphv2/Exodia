@@ -60,13 +60,13 @@ export const api = {
 
   // Votes en AG
   votes: (pointId: string) => req<{ votes: Vote[]; canRun: boolean }>('GET', `/points/${pointId}/votes`),
-  createVote: (pointId: string, question: string, options: string[]) => req<{ vote: Vote }>('POST', `/points/${pointId}/votes`, { question, options }),
+  createVote: (pointId: string, question: string, options: string[], radius: number) => req<{ vote: Vote }>('POST', `/points/${pointId}/votes`, { question, options, radius }),
   vote: (id: string) => req<{ vote: Vote }>('GET', `/votes/${id}`),
   closeVote: (id: string) => req<{ vote: Vote }>('POST', `/votes/${id}/close`, {}),
-  ballot: (id: string, choice: number, pos: { lat: number; lng: number; accuracy?: number }) => req<{ vote: Vote }>('POST', `/votes/${id}/ballot`, { choice, ...pos }),
+  ballot: (id: string, choice: number, pos: { lat: number; lng: number; accuracy?: number } | null) => req<{ vote: Vote }>('POST', `/votes/${id}/ballot`, { choice, ...(pos ?? {}) }),
   // Vote public (sans l'app)
-  lookupVote: (code: string, pos: { lat: number; lng: number; accuracy?: number }) => req<{ vote: Vote; agTitle: string }>('POST', '/public/votes/lookup', { code, ...pos }),
-  publicBallot: (code: string, choice: number, pos: { lat: number; lng: number; accuracy?: number }) => req<{ vote: Vote }>('POST', '/public/votes/ballot', { code, choice, ...pos }),
+  lookupVote: (code: string, pos: { lat: number; lng: number; accuracy?: number } | null) => req<{ vote: Vote; agTitle: string }>('POST', '/public/votes/lookup', { code, ...(pos ?? {}) }),
+  publicBallot: (code: string, choice: number, pos: { lat: number; lng: number; accuracy?: number } | null) => req<{ vote: Vote }>('POST', '/public/votes/ballot', { code, choice, ...(pos ?? {}) }),
   voteResult: (id: string) => req<{ result: VoteResult }>('GET', `/public/votes/${id}/result`),
 
   points: () => req<{ points: Point[] }>('GET', '/points'),

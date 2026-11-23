@@ -3,11 +3,15 @@ import { store } from './store';
 import { openSheet } from './sheet';
 import { getPosition, type Pos } from './geo';
 import { h, icon, clear, toast, relative } from './ui';
-import type { Point, Vote } from '../../shared/model';
+import { chips } from './forms';
+import { VOTE_RADII, DEFAULT_VOTE_RADIUS, voteRadiusLabel, type Point, type Vote } from '../../shared/model';
+
+/** Texte de la règle de distance d'un vote. */
+const whereText = (r: number) => (r ? `Sur place uniquement, à moins de ${r} m.` : 'Depuis n\'importe où : pas de condition de distance.');
 
 /*
  * Votes en AG, façon Kahoot : un code à 5 chiffres par vote, un vote par appareil,
- * seulement sur place (à moins de 50 m de l'AG). Le serveur vérifie tout.
+ * seulement sur place (à moins de X m de l'AG, distance choisie au lancement). Le serveur vérifie tout.
  */
 
 const DEFAULT_OPTIONS = ['Pour', 'Contre', 'Abstention'];
@@ -28,7 +32,7 @@ export function resultBars(options: string[], counts: number[] | null, total: nu
   }));
 }
 
-/** Position GPS pour voter (le serveur vérifie qu'on est à moins de 50 m). */
+/** Position GPS pour voter (le serveur vérifie la distance à l'AG). */
 async function hereOrToast(): Promise<Pos | null> {
   try {
     return await getPosition(15000);
@@ -58,7 +62,7 @@ export function votesSection(p: Point): HTMLElement {
         h('div', { class: 'section-title' }, icon('vote', 18), `Votes${votes.length ? ` (${votes.length})` : ''}`),
         votes.length ? h('ul', { class: 'vote-list' }, votes.map((v) => voteRow(v, canRun))) : h('p', { class: 'field-hint' }, 'Aucun vote pour l\'instant.'),
         canRun ? h('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: () => openNewVote(p) }, icon('plus', 18), 'Lancer un vote') : null,
-        h('p', { class: 'field-hint' }, 'Pour voter, il faut être sur place (à moins de 50 m), avec l\'app ou juste le code à 5 chiffres sur la page d\'accueil.'),
+        h('p', { class: 'field-hint' }, 'Pour voter, il faut être sur place (distance choisie au lancement du vote), avec l\'app ou juste le code à 5 chiffres sur la page d\'accueil.'),
       );
     } catch (e) {
       clear(wrap, h('p', { class: 'field-hint' }, (e as ApiError).message));
@@ -75,7 +79,7 @@ function voteRow(v: Vote, canRun: boolean) {
     h('div', { class: 'vote-head' },
       h('strong', null, v.question),
       h('span', { class: `vote-status ${v.status}` }, open ? 'En cours' : 'Clos')),
-    h('span', { class: 'field-hint' }, open ? `Lancé ${relative(v.createdAt)}` : `Clos ${relative(v.closedAt ?? v.createdAt)}`),
+    h('span', { class: 'field-hint' }, open ? `Lancé ${relative(v.createdAt)} · ${v.radius ? `sur place à moins de ${v.radius} m` : 'sans condition de distance'}` : `Clos ${relative(v.closedAt ?? v.createdAt)}`),
     resultBars(v.options, v.counts, v.total, v.myChoice),
     h('div', { class: 'vote-actions' },
       open && canRun ? h('button', { class: 'btn btn-small btn-light', type: 'button', onclick: () => openKahoot(v.id) }, icon('qr-code', 15), 'Afficher le code') : null,
@@ -87,7 +91,7 @@ function voteRow(v: Vote, canRun: boolean) {
 
 /** Lancer un vote : la question et les choix (Pour / Contre / Abstention par défaut). */
 export function openNewVote(p: Point) {
-  const state = { question: '', options: [...DEFAULT_OPTIONS] };
+  const state = { question: '', options: [...DEFAULT_OPTIONS], radius: DEFAULT_VOTE_RADIUS as number };
   const list = h('div', { class: 'vote-options-edit' });
   const renderOptions = () => clear(list, ...state.options.map((o, i) => h('div', { class: 'vote-option-edit' },
     h('input', { class: 'input', type: 'text', maxlength: '60', value: o, 'aria-label': `Choix ${i + 1}`, oninput: (e: Event) => (state.options[i] = (e.target as HTMLInputElement).value) }),
@@ -102,7 +106,7 @@ export function openNewVote(p: Point) {
     if (options.length < 2) return toast('Il faut au moins 2 choix.', 'err');
     submit.disabled = true;
     try {
-      const { vote } = await api.createVote(p.id, state.question.trim(), options);
+      const { vote } = await api.createVote(p.id, state.question.trim(), options, state.radius);
       s.close();
       store.emit('votes');
       openKahoot(vote.id);
@@ -118,6 +122,9 @@ export function openNewVote(p: Point) {
       h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Question'), question),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Choix'), list,
         h('button', { class: 'link-btn', type: 'button', onclick: () => { if (state.options.length < 8) { state.options.push(''); renderOptions(); } } }, '+ Ajouter un choix')),
+      h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Pour voter, être à moins de'),
+        chips(VOTE_RADII.map((r) => ({ value: r as number, label: voteRadiusLabel(r) })), state.radius, (v) => (state.radius = v)),
+        h('span', { class: 'field-hint' }, 'Autour du point de l\'AG. 50 m suffit pour une salle ou une cour ; plus large pour un amphi, une esplanade ou une manif. « Peu importe » : on peut voter de partout, sans donner sa position (le code seul suffit).')),
     ),
     footer: submit,
   });
@@ -137,7 +144,7 @@ export function openKahoot(voteId: string) {
       clear(body,
         h('p', { class: 'kahoot-question' }, v.question),
         open && v.code ? h('div', { class: 'kahoot-code', 'aria-label': `Code ${v.code.split('').join(' ')}` }, v.code.split('').map((d) => h('span', null, d))) : null,
-        open ? h('p', { class: 'kahoot-hint' }, 'Tape ce code sur la page d\'accueil de l\'app (sans compte) ou dans la fiche de l\'AG. Sur place uniquement, à moins de 50 m.') : h('p', { class: 'kahoot-hint' }, 'Vote clos : voici les résultats.'),
+        open ? h('p', { class: 'kahoot-hint' }, `Tape ce code sur la page d'accueil de l'app (sans compte) ou dans la fiche de l'AG. ${whereText(v.radius)}`) : h('p', { class: 'kahoot-hint' }, 'Vote clos : voici les résultats.'),
         h('p', { class: 'kahoot-total' }, h('strong', null, String(v.total)), ` vote${v.total > 1 ? 's' : ''}`),
         resultBars(v.options, v.counts, v.total),
       );
@@ -155,7 +162,7 @@ export function openKahoot(voteId: string) {
   void render();
 }
 
-/** Voter depuis l'app (même règle des 50 m). */
+/** Voter depuis l'app (même règle de distance). */
 function openAppVote(v: Vote) {
   const s = openSheet({
     title: 'Voter',
@@ -164,8 +171,9 @@ function openAppVote(v: Vote) {
       h('div', { class: 'vote-choices' }, v.options.map((o, i) => h('button', { class: 'btn btn-outline btn-block vote-choice', type: 'button', onclick: async (e: Event) => {
         const b = e.currentTarget as HTMLButtonElement;
         b.disabled = true;
-        const pos = await hereOrToast();
-        if (!pos) { b.disabled = false; return; }
+        // Position seulement si le vote a une condition de distance.
+        const pos = v.radius ? await hereOrToast() : null;
+        if (v.radius && !pos) { b.disabled = false; return; }
         try {
           await api.ballot(v.id, i, pos);
           s.close();
@@ -176,7 +184,7 @@ function openAppVote(v: Vote) {
           b.disabled = false;
         }
       } }, o))),
-      h('p', { class: 'field-hint' }, 'Ta position est vérifiée une seule fois pour ce vote (à moins de 50 m de l\'AG). Un vote par appareil.'),
+      h('p', { class: 'field-hint' }, v.radius ? `Ta position est vérifiée une seule fois pour ce vote (à moins de ${v.radius} m de l'AG). Un vote par appareil.` : 'Pas de condition de distance pour ce vote. Un vote par appareil.'),
     ),
   });
 }
@@ -200,24 +208,32 @@ export function publicVotePage(back: () => void): HTMLElement {
     const btn = h('button', { class: 'btn btn-yellow btn-big btn-block', type: 'submit' }, h('span', null, 'Voter'), icon('arrow-right', 22)) as HTMLButtonElement;
     clear(root,
       h('h1', { class: 'splash-title' }, 'Code de vote'),
-      h('p', { class: 'splash-text' }, 'Tape le code à 5 chiffres affiché pendant l\'AG. Il faut être sur place : ta position est vérifiée (à moins de 50 m), puis oubliée.'),
+      h('p', { class: 'splash-text' }, 'Tape le code à 5 chiffres affiché pendant l\'AG. Si le vote demande d\'être sur place, ta position est vérifiée, puis oubliée.'),
       msg ? h('p', { class: 'pv-error', role: 'alert' }, icon('circle-alert', 18), msg) : null,
       h('form', { class: 'join-form', onsubmit: async (e: Event) => {
         e.preventDefault();
         code = input.value;
         if (!/^\d{5}$/.test(code)) return askCode('Le code fait 5 chiffres.');
         btn.disabled = true;
-        btn.querySelector('span')!.textContent = 'Localisation…';
+        btn.querySelector('span')!.textContent = 'Recherche…';
         try {
-          pos = await getPosition(15000);
-        } catch (err) {
-          return askCode((err as Error).message);
-        }
-        try {
+          // D'abord avec le code seul : on ne demande la position que si ce vote en a besoin.
           const { vote, agTitle } = await api.lookupVote(code, pos);
           showVote(vote, agTitle);
         } catch (err) {
-          askCode((err as ApiError).message);
+          if ((err as ApiError).status !== 428) return askCode((err as ApiError).message);
+          btn.querySelector('span')!.textContent = 'Localisation…';
+          try {
+            pos = await getPosition(15000);
+          } catch (e2) {
+            return askCode((e2 as Error).message);
+          }
+          try {
+            const { vote, agTitle } = await api.lookupVote(code, pos);
+            showVote(vote, agTitle);
+          } catch (e3) {
+            askCode((e3 as ApiError).message);
+          }
         }
       } }, input, btn),
       h('button', { class: 'link-btn pv-back', type: 'button', onclick: back }, 'Retour'),
@@ -233,7 +249,7 @@ export function publicVotePage(back: () => void): HTMLElement {
       h('div', { class: 'pv-choices' }, v.options.map((o, i) => h('button', { class: 'btn btn-yellow btn-big btn-block', type: 'button', onclick: async (e: Event) => {
         (e.currentTarget as HTMLButtonElement).disabled = true;
         try {
-          const { vote } = await api.publicBallot(code, i, pos!);
+          const { vote } = await api.publicBallot(code, i, pos);
           showDone(vote, 'A voté !');
         } catch (err) {
           askCode((err as ApiError).message);

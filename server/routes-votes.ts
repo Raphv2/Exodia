@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { db } from './db';
 import { hasSpace, newId, rateLimit, sha256, type DeviceRow } from './auth';
 import { broadcast } from './events';
-import type { Vote, VoteResult } from '../shared/model';
+import { VOTE_RADII, DEFAULT_VOTE_RADIUS, type Vote, type VoteResult } from '../shared/model';
 
 /*
  * Votes en AG, façon Kahoot :
@@ -85,13 +85,20 @@ function distance(a: { lat: number; lng: number }, b: { lat: number; lng: number
   return 2 * R * Math.asin(Math.sqrt(x));
 }
 
-const posSchema = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), accuracy: z.number().min(0).max(100000).optional() });
+/** Position (facultative : seulement pour les votes avec une distance). */
+const posSchema = z.object({ lat: z.number().min(-90).max(90).optional(), lng: z.number().min(-180).max(180).optional(), accuracy: z.number().min(0).max(100000).optional() });
 
-/** Sur place ? (à moins du rayon, avec une petite marge pour l'imprécision du GPS). Ne révèle jamais la distance exacte. */
+/**
+ * Sur place ? (à moins du rayon, avec une petite marge pour l'imprécision du GPS). Ne révèle jamais la distance exacte.
+ * Rayon 0 : peu importe la distance, on ne regarde pas la position. Sans position alors qu'il en faut une : NEED_POSITION.
+ */
+const NEED_POSITION = 'Ce vote demande ta position : il faut être sur place.';
 function presenceError(pos: z.infer<typeof posSchema>, ag: PointLite, radius: number): string | null {
+  if (!radius) return null;
+  if (pos.lat == null || pos.lng == null) return NEED_POSITION;
   const acc = pos.accuracy ?? MAX_ACCURACY;
   if (acc > MAX_ACCURACY) return 'Ta position est trop imprécise. Active le GPS (localisation précise) et réessaie dehors ou près d\'une fenêtre.';
-  if (distance(pos, ag) > radius + Math.min(acc, 25)) return `Pour voter, il faut être sur place, à moins de ${radius} m du lieu de l'AG.`;
+  if (distance({ lat: pos.lat, lng: pos.lng }, ag) > radius + Math.min(acc, 25)) return `Pour voter, il faut être sur place, à moins de ${radius} m du lieu de l'AG.`;
   return null;
 }
 
@@ -156,6 +163,8 @@ votes.post('/points/:id/votes', (req, res) => {
   const body = z.object({
     question: z.string().trim().min(1, 'Écris la question').max(200),
     options: z.array(z.string().trim().min(1).max(60)).min(2, 'Il faut au moins 2 choix').max(8),
+    // Distance autour de l'AG pour pouvoir voter : seulement les valeurs proposées.
+    radius: z.number().int().refine((r) => (VOTE_RADII as readonly number[]).includes(r), 'Distance invalide').optional(),
   }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.issues[0]?.message ?? 'Données invalides' });
   const ag = getPoint(req.params.id);
@@ -164,8 +173,8 @@ votes.post('/points/:id/votes', (req, res) => {
   if (ag.space !== 'mvt') return res.status(400).json({ error: 'Les votes ne sont disponibles que côté Mouvement.' });
   if (!canRun(req.device!, ag)) return res.status(403).json({ error: 'Seul·e l\'organisateur·rice de l\'AG ou un admin peut lancer un vote.' });
   const id = newId();
-  db.prepare('INSERT INTO votes (id, point_id, question, options, code, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, ag.id, body.data.question, JSON.stringify(body.data.options), newCode(), req.device!.id, Date.now());
+  db.prepare('INSERT INTO votes (id, point_id, question, options, code, radius, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, ag.id, body.data.question, JSON.stringify(body.data.options), newCode(), body.data.radius ?? DEFAULT_VOTE_RADIUS, req.device!.id, Date.now());
   broadcast('votes', { id, pointId: ag.id, by: req.device!.id }, ag.space);
   res.status(201).json({ vote: voteDto(getVote(id)!, { full: true }) });
 });
@@ -197,7 +206,7 @@ votes.post('/votes/:id/ballot', (req, res) => {
   const ag = v && getPoint(v.point_id);
   if (!v || !ag || !hasSpace(req.device!, ag.space)) return res.status(404).json({ error: 'Vote introuvable' });
   const far = presenceError(body.data, ag, v.radius);
-  if (far) return res.status(403).json({ error: far });
+  if (far) return res.status(far === NEED_POSITION ? 428 : 403).json({ error: far, radius: v.radius });
   const r = cast(v, ag, `d:${req.device!.id}`, body.data.choice, req.device!.id);
   if ('error' in r) return res.status(r.status).json({ error: r.error });
   res.json({ vote: voteDto(getVote(v.id)!, { full: canRun(req.device!, ag), voterKey: `d:${req.device!.id}` }) });
@@ -219,7 +228,7 @@ publicVotes.post('/votes/lookup', tryLimit, (req, res) => {
   const ag = v && getPoint(v.point_id);
   if (!v || !ag) return res.status(404).json({ error: 'Aucun vote ouvert avec ce code.' });
   const far = presenceError(body.data, ag, v.radius);
-  if (far) return res.status(403).json({ error: far });
+  if (far) return res.status(far === NEED_POSITION ? 428 : 403).json({ error: far, radius: v.radius });
   const key = voterKey(req, res);
   const dto = voteDto(v, { full: false, voterKey: key });
   res.json({ vote: { ...dto, code: null }, agTitle: ag.title });
@@ -233,7 +242,7 @@ publicVotes.post('/votes/ballot', tryLimit, (req, res) => {
   const ag = v && getPoint(v.point_id);
   if (!v || !ag) return res.status(404).json({ error: 'Ce vote est clos ou le code est faux.' });
   const far = presenceError(body.data, ag, v.radius);
-  if (far) return res.status(403).json({ error: far });
+  if (far) return res.status(far === NEED_POSITION ? 428 : 403).json({ error: far, radius: v.radius });
   const key = voterKey(req, res);
   const r = cast(v, ag, key, body.data.choice);
   if ('error' in r) return res.status(r.status).json({ error: r.error });

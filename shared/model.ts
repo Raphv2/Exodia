@@ -295,6 +295,11 @@ export interface CreatedInvite {
   qrSvg: string;
 }
 
+/** Distances proposées pour voter (m autour de l'AG) ; 50 m par défaut ; 0 = peu importe la distance. */
+export const VOTE_RADII = [25, 50, 100, 200, 500, 0] as const;
+export const voteRadiusLabel = (r: number) => (r ? `${r} m` : 'Peu importe');
+export const DEFAULT_VOTE_RADIUS = 50;
+
 /** Vote en AG (façon Kahoot : un code à 5 chiffres, un vote par appareil, sur place). */
 export interface Vote {
   id: string;
@@ -302,7 +307,7 @@ export interface Vote {
   question: string;
   options: string[];
   status: 'open' | 'closed';
-  /** Rayon (m) autour de l'AG pour pouvoir voter. */
+  /** Rayon (m) autour de l'AG pour pouvoir voter ; 0 = peu importe la distance (pas de position demandée). */
   radius: number;
   /** Code à 5 chiffres : seulement pour l'organisation, tant que le vote est ouvert. */
   code: string | null;
